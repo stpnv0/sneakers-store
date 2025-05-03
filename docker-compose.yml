@@ -1,0 +1,246 @@
+services:
+  postgres: # Сервис основной БД PostgreSQL
+    image: postgres:15-alpine
+    container_name: sneakers_db
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: sneaker
+    ports: 
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - .sneakers_store/backend/db/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U root -d sneaker"]
+      interval: 10s 
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+
+  redis: 
+    image: redis:alpine
+    container_name: sneakers_redis
+    ports: 
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s 
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+
+  cart_postgres:
+      image: postgres:13-alpine
+      container_name: cart_postgres
+      environment:
+        POSTGRES_USER: cart_user
+        POSTGRES_PASSWORD: cart_password
+        POSTGRES_DB: cart_db
+      ports: 
+       - "5433:5432"
+      volumes:
+        - cart_postgres_data:/var/lib/postgresql/data
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U cart_user -d cart_db"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+      restart: unless-stopped
+      networks:
+        - sneakers_network
+
+  cart_redis:
+    image: redis:alpine
+    container_name: cart_redis
+    ports: 
+      - "6380:6379"
+    volumes:
+      - cart_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+
+  cart_migrations: # Сервис для запуска миграций корзины
+    build:
+      context: ./cart_service 
+      dockerfile: Dockerfile
+    container_name: cart_migrations
+    command: sh /app/scripts/run_migrations.sh
+    environment:
+      - POSTGRES_HOST=cart_postgres
+      - POSTGRES_USER=cart_user
+      - POSTGRES_PASSWORD=cart_password
+      - POSTGRES_DB=cart_db
+    depends_on:
+      cart_postgres: # Зависит от выделенной БД корзины
+        condition: service_healthy
+    restart: on-failure 
+    networks:
+      - sneakers_network
+
+  favourites_postgres: 
+      image: postgres:15-alpine 
+      container_name: favourites_postgres
+      ports: 
+      - "5434:5432"
+      environment:
+        POSTGRES_USER: favourites_user 
+        POSTGRES_PASSWORD: favourites_password 
+        POSTGRES_DB: favourites_db 
+      volumes:
+        - favourites_postgres_data:/var/lib/postgresql/data 
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U favourites_user -d favourites_db"]
+        interval: 10s
+        timeout: 5s
+        retries: 5
+      restart: unless-stopped
+      networks:
+        - sneakers_network
+
+  favourites_redis:
+    image: redis:alpine
+    container_name: favourites_redis
+    ports: 
+      - "6381:6379"
+    volumes:
+      - favourites_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+
+  favourites_migrations: # Сервис для запуска миграций корзины
+    build:
+      context: ./fav_service 
+      dockerfile: Dockerfile
+    container_name: favourites_migrations
+    command: sh /app/scripts/run_migrations.sh
+    environment:
+      - POSTGRES_HOST=favourites_postgres
+      - POSTGRES_USER=favourites_user
+      - POSTGRES_PASSWORD=favourites_password
+      - POSTGRES_DB=favourites_db
+    depends_on:
+      favourites_postgres: 
+        condition: service_healthy
+    restart: on-failure 
+    networks:
+      - sneakers_network
+
+  # --- Приложения ---
+  backend:
+    build:
+      context: ./sneakers_store/backend 
+      dockerfile: Dockerfile
+    container_name: sneakers_backend
+    depends_on:
+      postgres:
+        condition: service_healthy 
+      cart_service: 
+        condition: service_started
+      favourites_service: 
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      - DB_HOST=postgres 
+      # - DB_PORT=5432
+      # - DB_USER=root
+      # - DB_PASSWORD=password
+      # - DB_NAME=sneaker
+      # --- Адреса других сервисов ---
+      - CART_SERVICE_URL=http://sneakers_cart:8081/api/v1 
+      - FAVOURITES_SERVICE_URL=http://sneakers_favourites:8082/api/v1
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - sneakers_network
+  
+  migrator:
+    image: migrate/migrate:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./sneakers_store/backend/db/migrations:/migrations
+    command: ["-path", "/migrations", "-database", "postgresql://root:password@postgres:5432/sneaker?sslmode=disable", "up"]
+    restart: on-failure
+    networks:
+      - sneakers_network
+
+  cart_service:
+    build:
+      context: ./cart_service 
+      dockerfile: Dockerfile
+    container_name: sneakers_cart
+    depends_on:
+      cart_redis:
+        condition: service_healthy
+      cart_postgres:
+         condition: service_healthy
+      cart_migrations: 
+         condition: service_completed_successfully
+    ports:
+      - "8081:8081"
+    environment:
+      - REDIS_HOST=cart_redis 
+      - REDIS_PORT=6379
+      - MAIN_SERVICE_URL=http://sneakers_backend:8080
+      - POSTGRES_DSN=postgres://cart_user:cart_password@cart_postgres:5432/cart_db?sslmode=disable
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+
+  favourites_service: 
+    build:
+      context: ./fav_service 
+      dockerfile: Dockerfile
+    container_name: sneakers_favourites
+    depends_on:
+      favourites_postgres: 
+        condition: service_healthy
+      favourites_redis: 
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+    environment:
+      # --- Подключение к СВОЕЙ БД ---
+      - POSTGRES_DSN=postgres://favourites_user:favourites_password@favourites_postgres:5432/favourites_db?sslmode=disable
+      # --- Подключение к СВОЕМУ Redis ---
+      - REDIS_HOST=favourites_redis 
+      - REDIS_PORT=6379 
+      - MAIN_SERVICE_URL=http://sneakers_backend:8080
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+
+networks:
+  sneakers_network:
+    driver: bridge
+
+# --- Volumes ---
+volumes:
+  postgres_data:
+  redis_data:
+  cart_postgres_data:
+  cart_redis_data:
+  favourites_postgres_data: 
+  favourites_redis_data:

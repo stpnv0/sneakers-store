@@ -1,0 +1,34 @@
+env: "local" 
+app_secret: "cart_service_secret"
+
+# Настройки HTTP-сервера
+http_server:
+  address: "0.0.0.0:8081"
+  timeout: "10s"
+  idle_timeout: "60s"
+  cors_allowed:
+    - "http://localhost:5173"
+
+# Настройки Redis
+redis:
+  host: "redis"  # Используем имя сервиса из docker-compose
+  port: 6379
+  password: ""
+  db: 0
+  expiration: "168h"  # 7 дней
+
+postgres:
+  host: "cart_db"
+  port: 5432
+  user: "cart_user"
+  password: "cart_password"
+  dbname: "cart_db"
+  sslmode: "disable"
+  max_connections: 10
+  connection_timeout: 5
+# Настройки клиента основного сервиса
+clients:
+  main_service:
+    url: "${MAIN_SERVICE_URL:-http://localhost:8080}"
+    timeout: "5s"
+    retry_count: 3

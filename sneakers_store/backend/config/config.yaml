@@ -1,0 +1,41 @@
+# Общие настройки
+env: "local"
+app_secret: "mysecret"
+
+# Настройки HTTP-сервера
+http_server:
+  address: "0.0.0.0:8080"   # Порт для бэкенда
+  timeout: "10s"             # Таймаут обработки запроса
+  idle_timeout: "60s"        # Таймаут бездействия соединения
+  cors_allowed:
+    - "http://localhost:5173"  # Разрешенные домены для фронтенда (Vite)
+
+# Настройки базы данных PostgreSQL
+database:
+  host: "${DB_HOST:-postgres}"          # Хост БД (для Docker: postgres)
+  port: 5432                 # Порт БД
+  user: "root"               # User БД
+  password: "password"       # Пароль БД
+  name: "sneaker"            # Название БД
+  ssl_mode: "disable"        # SSL режим (disable для локальной разработки)
+
+# Настройки клиентов
+clients:
+  sso:
+    address: "host.docker.internal:44044"  # Адрес SSO-сервиса (gRPC)
+    timeout: "5s"               # Таймаут запросов к SSO
+    retriesCount: 3             # Количество ретраев к SSO
+  cart:
+    address: "http://sneakers_cart:8081/api/v1"  # Адрес микросервиса корзины
+    timeout: "5s"                      # Таймаут запросов к сервису корзины
+    retriesCount: 3                    # Количество ретраев к сервису корзины
+  favourites:
+    address: "http://sneakers_favourites:8082/api/v1"
+    timeout: "5s"
+    retriesCount: 3 
+
+
+
+
+
+

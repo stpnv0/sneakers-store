@@ -1,0 +1,111 @@
+.card {
+    border: 1px solid #f3f3f3;
+    padding: 20px;
+    width: 100%;
+    border-radius: 40px;
+    transition: box-shadow 0.2s ease-in-out , transform 0.2s ease-in-out;
+    margin-bottom: 30px;
+    cursor: pointer;
+    
+    &:hover {
+       box-shadow: 0px 14px 35px rgba(0, 0, 0, 0.06);
+       transform: translateY(-5px);
+    }
+  
+    .favorite {
+      position: absolute;
+      cursor: pointer;
+    }
+  
+    span {
+      font-size: 13px;
+      opacity: 0.5;
+      text-transform: uppercase;
+    }
+  
+    b {
+      font-size: 13px;
+    }
+  
+    h5 {
+      font-weight: 400;
+      font-size: 14px;
+      margin-top: 14px;
+      min-height: 32px;
+    }
+  
+    .cardButton {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+  
+    .price {
+      display: flex;
+      flex-direction: column;
+    }
+  
+    .addButton {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      
+      .btn {
+        width: 32px;
+        height: 32px;
+        cursor: pointer;
+        transition: all 0.2s ease-in-out;
+        background: #ffffff;
+        border: 1px solid #f2f2f2;
+        border-radius: 8px;
+        padding: 7px;
+        
+        &:hover {
+          background: #f8f8f8;
+        }
+      }
+
+      .quantityBtn {
+        width: 30px;
+        height: 30px;
+        background: #FFFFFF;
+        border: 1px solid #F2F2F2;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease-in-out;
+        
+        &:hover {
+          background: #F8F8F8;
+        }
+        
+        &:first-child {
+          margin-right: 5px;
+        }
+        
+        &:last-child {
+          margin-left: 5px;
+        }
+      }
+      
+      .quantityBadge {
+        font-size: 14px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 25px;
+        text-align: center;
+        opacity: 1;
+      }
+    }
+  }
+  
+  .displayNone {
+    display: none;
+  }
