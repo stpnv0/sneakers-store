@@ -1,0 +1,39 @@
+//protoc -I proto proto/sso/sso.proto --go_out=./gen/go --go_opt=paths=source_relative --go-grpc_out=./gen/go --go-grpc_opt=paths=source_relative 
+syntax = "proto3";
+
+package auth;
+
+option go_package = "stpnv.sso.v1;ssov1";
+
+service Auth {
+    rpc Register (RegisterRequest) returns (RegisterResponse);
+    rpc Login (LoginRequest) returns (LoginResponse);
+    rpc IsAdmin (IsAdminRequest) returns (IsAdminResponse);
+}
+
+message IsAdminRequest {
+  int64 user_id = 1; // User ID to validate.
+}
+
+message IsAdminResponse {
+  bool is_admin = 1;  // Indicates whether the user is an admin.
+}
+
+message RegisterRequest {
+    string email = 1;
+    string password = 2;
+}
+
+message RegisterResponse {
+    int64 user_id = 1;
+}
+
+message LoginRequest {
+    string email = 1;
+    string password = 2;
+    int32 app_id = 3; //ID of the app to login to (потому что кроме url-shortener'a может быть множество других сервисов)
+}
+
+message LoginResponse {
+    string token = 1;
+}
