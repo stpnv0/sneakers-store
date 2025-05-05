@@ -1,5 +1,5 @@
 services:
-  postgres: # Сервис основной БД PostgreSQL
+  postgres: 
     image: postgres:15-alpine
     container_name: sneakers_db
     environment:
@@ -72,7 +72,7 @@ services:
     networks:
       - sneakers_network
 
-  cart_migrations: # Сервис для запуска миграций корзины
+  cart_migrations: 
     build:
       context: ./cart_service 
       dockerfile: Dockerfile
@@ -84,7 +84,7 @@ services:
       - POSTGRES_PASSWORD=cart_password
       - POSTGRES_DB=cart_db
     depends_on:
-      cart_postgres: # Зависит от выделенной БД корзины
+      cart_postgres: 
         condition: service_healthy
     restart: on-failure 
     networks:
@@ -126,7 +126,7 @@ services:
     networks:
       - sneakers_network
 
-  favourites_migrations: # Сервис для запуска миграций корзины
+  favourites_migrations: 
     build:
       context: ./fav_service 
       dockerfile: Dockerfile
@@ -144,7 +144,6 @@ services:
     networks:
       - sneakers_network
 
-  # --- Приложения ---
   backend:
     build:
       context: ./sneakers_store/backend 
@@ -161,11 +160,6 @@ services:
       - "8080:8080"
     environment:
       - DB_HOST=postgres 
-      # - DB_PORT=5432
-      # - DB_USER=root
-      # - DB_PASSWORD=password
-      # - DB_NAME=sneaker
-      # --- Адреса других сервисов ---
       - CART_SERVICE_URL=http://sneakers_cart:8081/api/v1 
       - FAVOURITES_SERVICE_URL=http://sneakers_favourites:8082/api/v1
     restart: unless-stopped
@@ -222,13 +216,44 @@ services:
     ports:
       - "8082:8082"
     environment:
-      # --- Подключение к СВОЕЙ БД ---
       - POSTGRES_DSN=postgres://favourites_user:favourites_password@favourites_postgres:5432/favourites_db?sslmode=disable
-      # --- Подключение к СВОЕМУ Redis ---
       - REDIS_HOST=favourites_redis 
       - REDIS_PORT=6379 
       - MAIN_SERVICE_URL=http://sneakers_backend:8080
     restart: unless-stopped
+    networks:
+      - sneakers_network
+    
+  sso_migrations:
+    build:
+      context: .  
+      dockerfile: sso_service/Dockerfile
+    container_name: sso_migrations
+    command: ./sso_migrator --storage-path=/root/storage/sso.db --migrations-path=/app/migrations
+    volumes:
+      - sso_data:/root/storage
+    environment:
+      - STORAGE_PATH=/root/storage/sso.db
+    restart: on-failure
+    networks:
+      - sneakers_network
+
+  sso_service:
+    build:
+      context: .  
+      dockerfile: sso_service/Dockerfile
+    container_name: sneakers_sso
+    restart: unless-stopped
+    depends_on:
+      sso_migrations:
+        condition: service_completed_successfully
+    ports:
+      - "44044:44044"
+    volumes:
+      - sso_data:/root/storage
+    environment:
+      - GIN_MODE=release
+      - STORAGE_PATH=/root/storage/sso.db
     networks:
       - sneakers_network
 
@@ -236,7 +261,6 @@ networks:
   sneakers_network:
     driver: bridge
 
-# --- Volumes ---
 volumes:
   postgres_data:
   redis_data:
@@ -244,3 +268,4 @@ volumes:
   cart_redis_data:
   favourites_postgres_data: 
   favourites_redis_data:
+  sso_data:
