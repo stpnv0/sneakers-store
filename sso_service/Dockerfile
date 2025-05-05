@@ -1,53 +1,49 @@
-# Этап сборки
 FROM golang:1.22-alpine AS builder
+
+RUN apk add --no-cache git protobuf-dev build-base
+
+RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+
+WORKDIR /build
+
+COPY protos /build/protos
+
+COPY sso_service /build/sso_service
+
+WORKDIR /build/sso_service
+
+RUN sed -i 's|replace github.com/stpnv0/protos => ../protos|replace github.com/stpnv0/protos => /build/protos|g' go.mod
+
+# Загружаем зависимости
+RUN go mod download
+RUN go mod tidy
+
+RUN mkdir -p /build/protos/gen/go
+
+RUN protoc --proto_path=/build/protos/proto \
+           --go_out=/build/protos/gen/go --go_opt=paths=source_relative \
+           --go-grpc_out=/build/protos/gen/go --go-grpc_opt=paths=source_relative \
+           /build/protos/proto/sso/sso.proto
+
+RUN CGO_ENABLED=1 go build -o /sso_service ./cmd/sso
+
+RUN CGO_ENABLED=1 go build -o /sso_migrator ./cmd/migrator
+
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates tzdata sqlite
 
 WORKDIR /app
 
-# Копируем proto-файлы из корневой директории проекта
-COPY ../protos ./protos
+COPY --from=builder /sso_service .
+COPY --from=builder /sso_migrator .
 
-# Копируем исходный код
-COPY . .
+COPY --from=builder /build/sso_service/config ./config
+COPY --from=builder /build/sso_service/migrations ./migrations
 
-# Компилируем приложение
-RUN go build -o sso_service ./cmd/sso
-
-# Финальный этап
-FROM alpine:latest
-
-# Устанавливаем необходимые зависимости
-RUN apk --no-cache add ca-certificates postgresql-client
-
-WORKDIR /root/
-
-# Копируем бинарный файл из этапа сборки
-COPY --from=builder /app/sso_service .
-COPY --from=builder /app/config ./config
-COPY --from=builder /app/migrations ./migrations
-
-# Создаем директорию для хранения данных
 RUN mkdir -p /root/storage
 
-# Создаем скрипт для запуска миграций
-RUN echo '#!/bin/sh\n\
-echo "Running SSO service migrations..."\n\
-./sso_service --config=./config/prod.yaml\n\
-echo "SSO service migrations completed."\n\
-' > /root/run_migrations.sh && chmod +x /root/run_migrations.sh
-
-# Создаем директорию для скриптов
-RUN mkdir -p /app/scripts
-
-# Создаем скрипт для запуска миграций в директории scripts
-RUN echo '#!/bin/sh\n\
-echo "Running SSO service migrations..."\n\
-cd /root && ./sso_service --config=./config/prod.yaml\n\
-echo "SSO service migrations completed."\n\
-exit 0\n\
-' > /app/scripts/run_migrations.sh && chmod +x /app/scripts/run_migrations.sh
-
-# Открываем порт
 EXPOSE 44044
 
-# Запускаем приложение
 CMD ["./sso_service", "--config=./config/prod.yaml"]
