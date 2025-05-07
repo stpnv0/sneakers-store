@@ -32,8 +32,8 @@ export const FavoritesProvider = ({ children }) => {
       setLoading(true);
       setError(null);
 
-      // Вызываем API избранного
-      const response = await axios.get('/api/v1/favourites');
+      // Вызываем API избранного с добавлением слеша в конце URL
+      const response = await axios.get('/api/v1/favourites/');
       
       // Логируем полученные данные для отладки
       logger.info('Raw favorites response:', response.data);
@@ -140,11 +140,11 @@ export const FavoritesProvider = ({ children }) => {
       if (isFavorite(numericItemId)) {
         // Удаляем товар из избранного
         logger.info('Removing from favorites:', numericItemId);
-        await axios.delete(`/api/v1/favourites/${numericItemId}`);
+        await axios.delete(`/api/v1/favourites/${numericItemId}/`);
       } else {
         // Добавляем товар в избранное
         logger.info('Adding to favorites:', numericItemId);
-        await axios.post('/api/v1/favourites', { sneaker_id: numericItemId });
+        await axios.post('/api/v1/favourites/', { sneaker_id: numericItemId });
       }
 
       // После изменения обновляем список ID

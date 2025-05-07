@@ -26,7 +26,7 @@ export const Header = (props) => {
         <header className='header'>
             <Link to="/">
                 <div className='headerLeft'>
-                    <img width={40} height={40} src="/public/img/logo.svg" alt="logo" />
+                    <img width={40} height={40} src="/img/logo.svg" alt="logo" />
                     <div className='headerInfo'>
                         <h3>React Sneakers</h3>
                         <p>Магазин лучших кроссовок</p>

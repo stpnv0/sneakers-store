@@ -42,7 +42,7 @@ const Login = () => {
     try {
       // Проверяем токен, делая запрос к защищенному эндпоинту
       const testAxios = axios.create({
-        baseURL: 'http://localhost:8080',
+        baseURL: 'http://localhost',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',

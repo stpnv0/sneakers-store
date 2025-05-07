@@ -3,7 +3,7 @@ import { logger } from '../utils/logger';
 
 // Создаем новый экземпляр axios с базовым URL
 const instance = axios.create({
-  baseURL: 'http://localhost:8080',
+  baseURL: 'http://localhost',
   headers: {
     'Content-Type': 'application/json'
   }

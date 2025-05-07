@@ -14,27 +14,20 @@ func InitRouter(favHandler *handlers.FavHandler) *gin.Engine {
 	router.Use(middleware.CORS())
 
 	// API группа
-	api := router.Group("/api/v1")
+	fav := router.Group("")
+	fav.Use(middleware.AuthMiddleware())
 	{
-		// Маршруты для избранного с аутентификацией
-		favourites := api.Group("/favourites")
-		favourites.Use(middleware.AuthMiddleware())
-		{
-			favourites.POST("", favHandler.AddToFavourite)
-			favourites.GET("", favHandler.GetAllFavourites)
-			favourites.DELETE("/:id", favHandler.DeleteFavourite)
-			favourites.GET("/:id", favHandler.IsFavourite)
-			favourites.GET("/batch", favHandler.GetFavouritesByIDs)
-
-			// отладочный эндпоинт
-			favourites.GET("/debug", favHandler.DebugFavourites)
-		}
-
-		// Проверка здоровья сервиса
-		api.GET("/health", func(c *gin.Context) {
-			c.JSON(200, gin.H{"status": "ok"})
-		})
+		fav.POST("", favHandler.AddToFavourite)
+		fav.GET("", favHandler.GetAllFavourites)
+		fav.DELETE("/:id", favHandler.DeleteFavourite)
+		fav.GET("/:id", favHandler.IsFavourite)
+		fav.GET("/batch", favHandler.GetFavouritesByIDs)
+		fav.GET("/debug", favHandler.DebugFavourites)
 	}
+
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok", "service": "favourites_service"})
+	})
 
 	return router
 }

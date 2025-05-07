@@ -37,15 +37,17 @@ export const CartProvider = ({ children }) => {
       setIsLoading(true);
       setError(null);
       
-      // Добавляем timestamp для предотвращения кэширования
+      // Добавляем timestamp для предотвращения кэширования и слеш в конце URL
       const timestamp = new Date().getTime();
-      const response = await axios.get(`/api/v1/cart?t=${timestamp}`);
+      const response = await axios.get(`/api/v1/cart/?t=${timestamp}`);
       
-      logger.info('Получены данные корзины', { itemCount: response.data?.cart?.length || 0 });
+      logger.info('Получены данные корзины', response.data);
       
       let cartArray = [];
       if (response.data && Array.isArray(response.data)) {
         cartArray = response.data;
+      } else if (response.data && Array.isArray(response.data.items)) {
+        cartArray = response.data.items;
       } else if (response.data && Array.isArray(response.data.cart)) {
         cartArray = response.data.cart;
       } else if (response.data && typeof response.data === 'object') {
@@ -108,12 +110,12 @@ export const CartProvider = ({ children }) => {
         return await increaseQuantity(sneakerId);
       }
       
-      // Добавляем товар в корзину
-      const response = await axios.post('/api/v1/cart', { sneaker_id: sneakerId, quantity: 1 });
+      // Добавляем товар в корзину - обратите внимание на слеш в конце URL
+      const response = await axios.post('/api/v1/cart/', { sneaker_id: sneakerId, quantity: 1 });
       console.log('Ответ при добавлении в корзину:', response.data);
       
       // Оптимистично обновляем UI
-      setCartItems(prev => [...prev, response.data]);
+      setCartItems(prev => [...prev, { sneaker_id: sneakerId, quantity: 1 }]);
       
       logger.info('Товар добавлен в корзину', { sneakerId });
       // Обновляем данные с сервера

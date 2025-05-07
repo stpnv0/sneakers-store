@@ -14,23 +14,19 @@ func InitRouter(cartHandler *handlers.CartHandler) *gin.Engine {
 	router.Use(middleware.CORS())
 
 	// API группа
-	api := router.Group("/api/v1")
-	{
-		// Маршруты для корзины с аутентификацией
-		cart := api.Group("/cart")
-		cart.Use(middleware.AuthMiddleware())
-		{
-			cart.POST("", cartHandler.AddToCart)
-			cart.GET("", cartHandler.GetCart)
-			cart.DELETE("/:id", cartHandler.RemoveFromCart)
-			cart.PUT("/:id", cartHandler.UpdateCartItemQuantity)
-		}
+	cart := router.Group("")
+	cart.Use(middleware.AuthMiddleware())
 
-		// Проверка здоровья сервиса
-		api.GET("/health", func(c *gin.Context) {
-			c.JSON(200, gin.H{"status": "ok"})
-		})
+	{
+		cart.POST("", cartHandler.AddToCart)
+		cart.GET("", cartHandler.GetCart)
+		cart.DELETE("/:id", cartHandler.RemoveFromCart)
+		cart.PUT("/:id", cartHandler.UpdateCartItemQuantity)
 	}
+
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok", "service": "cart_service"})
+	})
 
 	return router
 }
