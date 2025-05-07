@@ -1,35 +1,53 @@
 services:
-  postgres: 
+  nginx:
+    image: nginx:alpine
+    container_name: sneakers_nginx
+    ports:
+      - "80:80" 
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro 
+      - ./sneakers_store/frontend/dist:/var/www/frontend:ro 
+      - ./nginx/logs:/var/log/nginx 
+    depends_on:
+      - backend
+      - cart_service
+      - favourites_service
+      - sso_service
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+
+  postgres:
     image: postgres:13-alpine
     container_name: sneakers_db
     environment:
       POSTGRES_USER: root
       POSTGRES_PASSWORD: password
       POSTGRES_DB: sneaker
-    ports: 
+    ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - .sneakers_store/backend/db/migrations:/docker-entrypoint-initdb.d
+      - ./sneakers_store/backend/db/migrations:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U root -d sneaker"]
-      interval: 10s 
+      interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
     networks:
       - sneakers_network
 
-  redis: 
+  redis:
     image: redis:alpine
     container_name: sneakers_redis
-    ports: 
+    ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s 
+      interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
@@ -37,29 +55,29 @@ services:
       - sneakers_network
 
   cart_postgres:
-      image: postgres:13-alpine
-      container_name: cart_postgres
-      environment:
-        POSTGRES_USER: cart_user
-        POSTGRES_PASSWORD: cart_password
-        POSTGRES_DB: cart_db
-      ports: 
-       - "5433:5432"
-      volumes:
-        - cart_postgres_data:/var/lib/postgresql/data
-      healthcheck:
-        test: ["CMD-SHELL", "pg_isready -U cart_user -d cart_db"]
-        interval: 10s
-        timeout: 5s
-        retries: 5
-      restart: unless-stopped
-      networks:
-        - sneakers_network
+    image: postgres:13-alpine
+    container_name: cart_postgres
+    environment:
+      POSTGRES_USER: cart_user
+      POSTGRES_PASSWORD: cart_password
+      POSTGRES_DB: cart_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - cart_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cart_user -d cart_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - sneakers_network
 
   cart_redis:
     image: redis:alpine
     container_name: cart_redis
-    ports: 
+    ports:
       - "6380:6379"
     volumes:
       - cart_redis_data:/data
@@ -72,9 +90,9 @@ services:
     networks:
       - sneakers_network
 
-  cart_migrations: 
+  cart_migrations:
     build:
-      context: ./cart_service 
+      context: ./cart_service
       dockerfile: Dockerfile
     container_name: cart_migrations
     command: sh /app/scripts/run_migrations.sh
@@ -84,36 +102,36 @@ services:
       - POSTGRES_PASSWORD=cart_password
       - POSTGRES_DB=cart_db
     depends_on:
-      cart_postgres: 
+      cart_postgres:
         condition: service_healthy
-    restart: on-failure 
+    restart: on-failure
     networks:
       - sneakers_network
 
-  favourites_postgres: 
-      image: postgres:15-alpine 
-      container_name: favourites_postgres
-      ports: 
+  favourites_postgres:
+    image: postgres:15-alpine
+    container_name: favourites_postgres
+    ports:
       - "5434:5432"
-      environment:
-        POSTGRES_USER: favourites_user 
-        POSTGRES_PASSWORD: favourites_password 
-        POSTGRES_DB: favourites_db 
-      volumes:
-        - favourites_postgres_data:/var/lib/postgresql/data 
-      healthcheck:
-        test: ["CMD-SHELL", "pg_isready -U favourites_user -d favourites_db"]
-        interval: 10s
-        timeout: 5s
-        retries: 5
-      restart: unless-stopped
-      networks:
-        - sneakers_network
+    environment:
+      POSTGRES_USER: favourites_user
+      POSTGRES_PASSWORD: favourites_password
+      POSTGRES_DB: favourites_db
+    volumes:
+      - favourites_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U favourites_user -d favourites_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - sneakers_network
 
   favourites_redis:
     image: redis:alpine
     container_name: favourites_redis
-    ports: 
+    ports:
       - "6381:6379"
     volumes:
       - favourites_redis_data:/data
@@ -126,9 +144,9 @@ services:
     networks:
       - sneakers_network
 
-  favourites_migrations: 
+  favourites_migrations:
     build:
-      context: ./fav_service 
+      context: ./fav_service
       dockerfile: Dockerfile
     container_name: favourites_migrations
     command: sh /app/scripts/run_migrations.sh
@@ -138,36 +156,31 @@ services:
       - POSTGRES_PASSWORD=favourites_password
       - POSTGRES_DB=favourites_db
     depends_on:
-      favourites_postgres: 
+      favourites_postgres:
         condition: service_healthy
-    restart: on-failure 
+    restart: on-failure
     networks:
       - sneakers_network
 
   backend:
     build:
-      context: ./sneakers_store/backend 
+      context: ./sneakers_store/backend
       dockerfile: Dockerfile
     container_name: sneakers_backend
     depends_on:
       postgres:
-        condition: service_healthy 
-      cart_service: 
-        condition: service_started
-      favourites_service: 
-        condition: service_started
-    ports:
-      - "8080:8080"
+        condition: service_healthy
     environment:
-      - DB_HOST=postgres 
-      - CART_SERVICE_URL=http://sneakers_cart:8081/api/v1 
-      - FAVOURITES_SERVICE_URL=http://sneakers_favourites:8082/api/v1
+      - DB_HOST=postgres
+      - CART_SERVICE_INTERNAL_URL=http://sneakers_cart:8081 
+      - FAVOURITES_SERVICE_INTERNAL_URL=http://sneakers_favourites:8082
+      - SSO_SERVICE_GRPC_TARGET=sneakers_sso:44044
     restart: unless-stopped
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
       - sneakers_network
-  
+
   migrator:
     image: migrate/migrate:latest
     depends_on:
@@ -182,54 +195,48 @@ services:
 
   cart_service:
     build:
-      context: ./cart_service 
+      context: ./cart_service
       dockerfile: Dockerfile
     container_name: sneakers_cart
     depends_on:
       cart_redis:
         condition: service_healthy
       cart_postgres:
-         condition: service_healthy
-      cart_migrations: 
-         condition: service_completed_successfully
-    ports:
-      - "8081:8081"
+        condition: service_healthy
+      cart_migrations:
+        condition: service_completed_successfully
     environment:
-      - REDIS_HOST=cart_redis 
+      - REDIS_HOST=cart_redis
       - REDIS_PORT=6379
-      - MAIN_SERVICE_URL=http://sneakers_backend:8080
       - POSTGRES_DSN=postgres://cart_user:cart_password@cart_postgres:5432/cart_db?sslmode=disable
     restart: unless-stopped
     networks:
       - sneakers_network
 
-  favourites_service: 
+  favourites_service:
     build:
-      context: ./fav_service 
+      context: ./fav_service
       dockerfile: Dockerfile
     container_name: sneakers_favourites
     depends_on:
-      favourites_postgres: 
+      favourites_postgres:
         condition: service_healthy
-      favourites_redis: 
+      favourites_redis:
         condition: service_healthy
-    ports:
-      - "8082:8082"
     environment:
       - POSTGRES_DSN=postgres://favourites_user:favourites_password@favourites_postgres:5432/favourites_db?sslmode=disable
-      - REDIS_HOST=favourites_redis 
-      - REDIS_PORT=6379 
-      - MAIN_SERVICE_URL=http://sneakers_backend:8080
+      - REDIS_HOST=favourites_redis
+      - REDIS_PORT=6379
     restart: unless-stopped
     networks:
       - sneakers_network
-    
+
   sso_migrations:
     build:
-      context: .  
+      context: .
       dockerfile: sso_service/Dockerfile
     container_name: sso_migrations
-    command: ./sso_migrator --storage-path=/root/storage/sso.db --migrations-path=/app/migrations
+    command: ./sso_migrator --storage-path=/root/storage/sso.db --migrations-path=/root/migrations
     volumes:
       - sso_data:/root/storage
     environment:
@@ -240,7 +247,7 @@ services:
 
   sso_service:
     build:
-      context: .  
+      context: .
       dockerfile: sso_service/Dockerfile
     container_name: sneakers_sso
     restart: unless-stopped
@@ -248,7 +255,7 @@ services:
       sso_migrations:
         condition: service_completed_successfully
     ports:
-      - "44044:44044"
+     - "44044:44044"
     volumes:
       - sso_data:/root/storage
     environment:
@@ -266,6 +273,6 @@ volumes:
   redis_data:
   cart_postgres_data:
   cart_redis_data:
-  favourites_postgres_data: 
+  favourites_postgres_data:
   favourites_redis_data:
   sso_data:

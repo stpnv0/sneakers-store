@@ -5,7 +5,6 @@ import (
 
 	"sneakers-store/internal/auth"
 	"sneakers-store/internal/config"
-	"sneakers-store/internal/middleware"
 	"sneakers-store/internal/sneakers"
 
 	"github.com/gin-contrib/cors"
@@ -19,7 +18,7 @@ func InitRouter(sneakerHandler *sneakers.Handler, authHandler *auth.Handler, cfg
 
 	// CORS настройки
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173"},
+		AllowOrigins:     []string{"http://localhost:5173", "http://localhost"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length", "Authorization"},
@@ -27,7 +26,6 @@ func InitRouter(sneakerHandler *sneakers.Handler, authHandler *auth.Handler, cfg
 		MaxAge:           12 * time.Hour,
 	}))
 
-	// Настройка маршрутов
 	api := r.Group("/api/v1")
 	{
 		// Аутентификация
@@ -48,35 +46,7 @@ func InitRouter(sneakerHandler *sneakers.Handler, authHandler *auth.Handler, cfg
 			itemsGroup.POST("/batch", sneakerHandler.GetSneakersByIDs)
 			itemsGroup.GET("", sneakerHandler.GetAllSneakers)
 			itemsGroup.DELETE("/:id", sneakerHandler.DeleteSneaker)
-			
-			// Добавляем новый эндпоинт для получения товаров по списку ID через GET запрос
 			itemsGroup.GET("/batch", sneakerHandler.GetSneakersByIDsQuery)
-		}
-
-		// Избранное (проксируем через микросервис)
-		favGroup := api.Group(
-			"/favourites",
-			middleware.AuthMiddleware(),
-			middleware.FavProxyMiddleware(cfg.Clients.Favourites.Address),
-		)
-		{
-			// Пустые обработчики: прокси перехватит все запросы
-			favGroup.GET("", func(c *gin.Context) {})
-			favGroup.POST("", func(c *gin.Context) {})
-			favGroup.DELETE("/:id", func(c *gin.Context) {})
-		}
-
-		// Корзина (проксируем через микросервис)
-		cartGroup := api.Group(
-			"/cart",
-			middleware.AuthMiddleware(),
-			middleware.CartProxyMiddleware(cfg.Clients.Cart.Address),
-		)
-		{
-			cartGroup.GET("", func(c *gin.Context) {})
-			cartGroup.POST("", func(c *gin.Context) {})
-			cartGroup.PUT("/:id", func(c *gin.Context) {})
-			cartGroup.DELETE("/:id", func(c *gin.Context) {})
 		}
 	}
 

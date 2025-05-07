@@ -1,46 +1,33 @@
 FROM golang:1.22-alpine AS builder
 
-RUN apk add --no-cache git protobuf-dev build-base
+WORKDIR /app
 
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
-RUN go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+COPY protos ./protos
 
-WORKDIR /build
+COPY sso_service .
 
-COPY protos /build/protos
+# Заменяем относительный путь в replace директиве
+RUN sed -i 's|replace github.com/stpnv0/protos => ../protos|replace github.com/stpnv0/protos => ./protos|g' go.mod
 
-COPY sso_service /build/sso_service
+# Устанавливаем необходимые зависимости для сборки
+RUN apk add --no-cache git build-base
 
-WORKDIR /build/sso_service
-
-RUN sed -i 's|replace github.com/stpnv0/protos => ../protos|replace github.com/stpnv0/protos => /build/protos|g' go.mod
-
-# Загружаем зависимости
-RUN go mod download
-RUN go mod tidy
-
-RUN mkdir -p /build/protos/gen/go
-
-RUN protoc --proto_path=/build/protos/proto \
-           --go_out=/build/protos/gen/go --go_opt=paths=source_relative \
-           --go-grpc_out=/build/protos/gen/go --go-grpc_opt=paths=source_relative \
-           /build/protos/proto/sso/sso.proto
-
-RUN CGO_ENABLED=1 go build -o /sso_service ./cmd/sso
-
-RUN CGO_ENABLED=1 go build -o /sso_migrator ./cmd/migrator
+# Собираем приложения
+RUN go mod download && \
+    go mod tidy && \
+    CGO_ENABLED=1 go build -o sso_service ./cmd/sso && \
+    CGO_ENABLED=1 go build -o sso_migrator ./cmd/migrator
 
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates tzdata sqlite
+RUN apk --no-cache add ca-certificates sqlite tzdata
 
-WORKDIR /app
+WORKDIR /root/
 
-COPY --from=builder /sso_service .
-COPY --from=builder /sso_migrator .
-
-COPY --from=builder /build/sso_service/config ./config
-COPY --from=builder /build/sso_service/migrations ./migrations
+COPY --from=builder /app/sso_service .
+COPY --from=builder /app/sso_migrator .
+COPY --from=builder /app/config ./config
+COPY --from=builder /app/migrations ./migrations
 
 RUN mkdir -p /root/storage
 
