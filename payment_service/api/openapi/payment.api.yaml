@@ -1,0 +1,270 @@
+openapi: 3.0.0
+info:
+  title: Payment Service API
+  description: API для сервиса оплаты с использованием ЮКассы
+  version: 1.0.0
+servers:
+  - url: /api/v1
+    description: Базовый URL API
+paths:
+  /payments:
+    post:
+      summary: Создать новый платеж
+      description: Инициирует новый платеж через ЮКассу
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePaymentRequest'
+      responses:
+        '201':
+          description: Платеж успешно создан
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatePaymentResponse'
+        '400':
+          description: Неверный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          description: Не авторизован
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Внутренняя ошибка сервера
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /payments/{id}:
+    get:
+      summary: Получить информацию о платеже
+      description: Возвращает информацию о платеже по его ID
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID платежа
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '404':
+          description: Платеж не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /payments/{id}/capture:
+    post:
+      summary: Подтвердить платеж
+      description: Подтверждает двухстадийный платеж
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID платежа
+      responses:
+        '200':
+          description: Платеж успешно подтвержден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '404':
+          description: Платеж не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /payments/{id}/cancel:
+    post:
+      summary: Отменить платеж
+      description: Отменяет платеж
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: ID платежа
+      responses:
+        '200':
+          description: Платеж успешно отменен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '404':
+          description: Платеж не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /webhooks/yookassa:
+    post:
+      summary: Вебхук от ЮКассы
+      description: Обрабатывает уведомления от ЮКассы об изменении статуса платежа
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/YooKassaWebhook'
+      responses:
+        '200':
+          description: Вебхук успешно обработан
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+components:
+  schemas:
+    CreatePaymentRequest:
+      type: object
+      required:
+        - order_id
+        - amount
+        - currency
+        - description
+        - return_url
+      properties:
+        order_id:
+          type: string
+          description: ID заказа
+          example: "order-123"
+        amount:
+          type: number
+          format: float
+          description: Сумма платежа
+          example: 1999.99
+        currency:
+          type: string
+          description: Валюта платежа (ISO 4217)
+          example: "RUB"
+        description:
+          type: string
+          description: Описание платежа
+          example: "Оплата заказа №123"
+        return_url:
+          type: string
+          format: uri
+          description: URL для возврата после оплаты
+          example: "https://example.com/payment/callback"
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+          description: Дополнительные данные
+    CreatePaymentResponse:
+      type: object
+      properties:
+        payment_id:
+          type: string
+          description: ID платежа
+          example: "28a9ead2-3de1-4d64-b77f-c60e5e5e3c0f"
+        confirmation_url:
+          type: string
+          format: uri
+          description: URL для перенаправления пользователя на страницу оплаты
+          example: "https://yoomoney.ru/checkout/payments/v2/contract?orderId=..."
+    Payment:
+      type: object
+      properties:
+        id:
+          type: string
+          description: ID платежа
+          example: "28a9ead2-3de1-4d64-b77f-c60e5e5e3c0f"
+        order_id:
+          type: string
+          description: ID заказа
+          example: "order-123"
+        user_id:
+          type: string
+          description: ID пользователя
+          example: "user-456"
+        amount:
+          type: number
+          format: float
+          description: Сумма платежа
+          example: 1999.99
+        currency:
+          type: string
+          description: Валюта платежа
+          example: "RUB"
+        status:
+          type: string
+          description: Статус платежа
+          enum: [pending, succeeded, canceled, waiting_for_capture, failed, refunded]
+          example: "succeeded"
+        payment_method:
+          type: string
+          description: Метод оплаты
+          example: "bank_card"
+        created_at:
+          type: string
+          format: date-time
+          description: Дата и время создания платежа
+        updated_at:
+          type: string
+          format: date-time
+          description: Дата и время последнего обновления платежа
+        external_id:
+          type: string
+          description: ID платежа в системе ЮКассы
+          example: "2b9e40d6-000f-5000-8000-18db351245c7"
+    YooKassaWebhook:
+      type: object
+      properties:
+        event:
+          type: string
+          description: Тип события
+          example: "payment.succeeded"
+        object:
+          type: object
+          properties:
+            id:
+              type: string
+              description: ID платежа в системе ЮКассы
+              example: "2b9e40d6-000f-5000-8000-18db351245c7"
+            status:
+              type: string
+              description: Статус платежа
+              example: "succeeded"
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Сообщение об ошибке
+          example: "Payment not found"
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT

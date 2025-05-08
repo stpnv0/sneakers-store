@@ -1,0 +1,19 @@
+server:
+  port: "8083"
+
+database:
+  host: "postgres"
+  port: "5432"
+  user: "payment_user"
+  password: "payment_password"
+  dbname: "payment_db"
+  sslmode: "disable"
+
+yookassa:
+  shop_id: "your_shop_id"
+  secret_key: "your_secret_key"
+
+kafka:
+  brokers:
+    - "kafka:9092"
+  topic: "payment_events"
