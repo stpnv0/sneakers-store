@@ -24,6 +24,7 @@ type Auth interface {
 		password string,
 	) (userID int64, err error)
 	IsAdmin(ctx context.Context, userID int64) (bool, error)
+	GetAppSecret(ctx context.Context, appID int) (string, error)
 }
 
 type serverAPI struct {
@@ -102,4 +103,20 @@ func (s *serverAPI) IsAdmin(
 	}
 
 	return &ssov1.IsAdminResponse{IsAdmin: isAdmin}, nil
+}
+
+func (s *serverAPI) GetAppSecret(ctx context.Context, in *ssov1.GetAppSecretRequest) (*ssov1.GetAppSecretResponse, error) {
+	if in.GetAppId() == 0 {
+		return nil, status.Error(codes.InvalidArgument, "app_id is required")
+	}
+
+	secret, err := s.auth.GetAppSecret(ctx, int(in.GetAppId()))
+	if err != nil {
+		if errors.Is(err, auth.ErrInvalidAppID) {
+			return nil, status.Error(codes.NotFound, "app not found")
+		}
+		return nil, status.Error(codes.Internal, "failed to get app secret")
+	}
+
+	return &ssov1.GetAppSecretResponse{Secret: secret}, nil
 }
