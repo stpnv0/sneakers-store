@@ -83,17 +83,15 @@ docker compose up -d
 ## 🛠 Разработка
 
 ### Структура проекта
-\`\`\`
-sneakers-store/
-├── api_gateway/        # API Gateway сервис
-├── backend/           # Основной бэкенд сервис
-├── cart_service/     # Сервис корзины
-├── fav_service/      # Сервис избранного
-├── sso_service/      # Сервис авторизации
-├── frontend/         # React приложение
-├── nginx/            # Nginx конфигурация
-└── protos/           # Protobuf файлы
-\`\`\`
+    sneakers-store/
+    ├── api_gateway/      # API Gateway сервис
+    ├── backend/          # Основной бэкенд сервис
+    ├── cart_service/     # Сервис корзины
+    ├── fav_service/      # Сервис избранного
+    ├── sso_service/      # Сервис авторизации
+    ├── frontend/         # React приложение
+    ├── nginx/            # Nginx конфигурация
+    └── protos/           # Protobuf файлы
 
 
 ## 📝 TODO
