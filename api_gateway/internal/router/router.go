@@ -11,8 +11,6 @@ import (
 func New(cfg *config.Config) *gin.Engine {
 	router := gin.Default()
 
-	router.Use(middleware.CORSMiddleware())
-
 	authMiddleware := middleware.AuthMiddleware(cfg.AppSecret)
 
 	apiV1 := router.Group("/api/v1")
