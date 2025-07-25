@@ -10,13 +10,8 @@ import (
 func InitRouter(cartHandler *handlers.CartHandler) *gin.Engine {
 	router := gin.Default()
 
-	// CORS middleware
-	router.Use(middleware.CORS())
-
-	// API группа
 	cart := router.Group("")
-	cart.Use(middleware.AuthMiddleware())
-
+	cart.Use(middleware.ExtractUserID())
 	{
 		cart.POST("", cartHandler.AddToCart)
 		cart.GET("", cartHandler.GetCart)

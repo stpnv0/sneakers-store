@@ -9,10 +9,7 @@ services:
       - ./sneakers_store/frontend/dist:/var/www/frontend:ro 
       - ./nginx/logs:/var/log/nginx 
     depends_on:
-      - backend
-      - cart_service
-      - favourites_service
-      - sso_service
+      - api_gateway
     restart: unless-stopped
     networks:
       - sneakers_network
@@ -28,7 +25,6 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./sneakers_store/backend/db/migrations:/docker-entrypoint-initdb.d
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U root -d sneaker"]
       interval: 10s
@@ -170,6 +166,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      migrator:
+        condition: service_completed_successfully
     environment:
       - DB_HOST=postgres
       - CART_SERVICE_INTERNAL_URL=http://sneakers_cart:8081 
@@ -236,7 +234,7 @@ services:
       context: .
       dockerfile: sso_service/Dockerfile
     container_name: sso_migrations
-    command: ./sso_migrator --storage-path=/root/storage/sso.db --migrations-path=/root/migrations
+    command: ./sso_migrator -storage-path=/root/storage/sso.db -migrations-path=/root/migrations
     volumes:
       - sso_data:/root/storage
     environment:
@@ -255,7 +253,7 @@ services:
       sso_migrations:
         condition: service_completed_successfully
     ports:
-     - "44044:44044"
+      - "44044:44044"
     volumes:
       - sso_data:/root/storage
     environment:
@@ -263,7 +261,7 @@ services:
       - STORAGE_PATH=/root/storage/sso.db
     networks:
       - sneakers_network
-
+      
   product_postgres:
     image: postgres:15-alpine
     container_name: product_postgres
@@ -332,6 +330,20 @@ services:
       minio:
         condition: service_started
     restart: unless-stopped
+
+  api_gateway:
+    build:
+      context: ./api_gateway
+      dockerfile: Dockerfile
+    container_name: sneakers_api_gateway
+    ports:
+      - "8083:8083"
+    restart: unless-stopped
+    depends_on:
+      - backend
+      - cart_service
+      - favourites_service
+      - sso_service
     networks:
       - sneakers_network
 

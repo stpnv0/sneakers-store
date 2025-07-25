@@ -1,0 +1,6 @@
+listen: ":8083"
+app_secret: "mysecret"
+downstream:
+  cart: "http://sneakers_cart:8081"
+  favourites: "http://sneakers_favourites:8082"
+  backend: "http://sneakers_backend:8080"

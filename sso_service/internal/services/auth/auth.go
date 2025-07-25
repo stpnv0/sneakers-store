@@ -170,3 +170,29 @@ func (a *Auth) IsAdmin(ctx context.Context, userID int64) (bool, error) {
 
 	return isAdmin, nil
 }
+
+// GetAppSecret returns the secret for the given app_id.
+func (a *Auth) GetAppSecret(ctx context.Context, appID int) (string, error) {
+	const op = "Auth.GetAppSecret"
+
+	log := a.log.With(
+		slog.String("op", op),
+		slog.Int("app_id", appID),
+	)
+
+	log.Info("retrieving app secret")
+
+	app, err := a.appProvider.App(ctx, appID)
+	if err != nil {
+		if errors.Is(err, storage.ErrAppNotFound) {
+			log.Warn("app not found")
+			return "", fmt.Errorf("%s: %w", op, ErrInvalidAppID)
+		}
+		log.Error("failed to get app", sl.Err(err))
+		return "", fmt.Errorf("%s: %w", op, err)
+	}
+
+	log.Info("app secret retrieved successfully")
+
+	return app.Secret, nil
+}

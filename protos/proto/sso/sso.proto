@@ -9,6 +9,7 @@ service Auth {
     rpc Register (RegisterRequest) returns (RegisterResponse);
     rpc Login (LoginRequest) returns (LoginResponse);
     rpc IsAdmin (IsAdminRequest) returns (IsAdminResponse);
+    rpc GetAppSecret (GetAppSecretRequest) returns (GetAppSecretResponse);
 }
 
 message IsAdminRequest {
@@ -36,4 +37,12 @@ message LoginRequest {
 
 message LoginResponse {
     string token = 1;
+}
+
+message GetAppSecretRequest {
+    int32 app_id = 1;
+}
+
+message GetAppSecretResponse {
+    string secret = 1;
 }

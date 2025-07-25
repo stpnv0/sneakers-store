@@ -10,17 +10,14 @@ import (
 func InitRouter(favHandler *handlers.FavHandler) *gin.Engine {
 	router := gin.Default()
 
-	// CORS middleware
-	router.Use(middleware.CORS())
-
 	// API группа
 	fav := router.Group("")
-	fav.Use(middleware.AuthMiddleware())
+	fav.Use(middleware.ExtractUserID())
 	{
 		fav.POST("", favHandler.AddToFavourite)
 		fav.GET("", favHandler.GetAllFavourites)
-		fav.DELETE("/:id", favHandler.DeleteFavourite)
-		fav.GET("/:id", favHandler.IsFavourite)
+		fav.DELETE("/:id/", favHandler.RemoveFromFavourite)
+		fav.GET("/:id/", favHandler.IsFavourite)
 		fav.GET("/batch", favHandler.GetFavouritesByIDs)
 		fav.GET("/debug", favHandler.DebugFavourites)
 	}
