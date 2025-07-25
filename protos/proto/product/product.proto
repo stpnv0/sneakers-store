@@ -12,22 +12,37 @@ service Product {
     rpc GetSneakersByIDs(GetSneakersByIDsRequest) returns (GetSneakersByIDsResponse);
     rpc GetAllSneakers(GetAllSneakersRequest) returns (GetAllSneakersResponse);
     rpc DeleteSneaker(DeleteSneakerRequest) returns (google.protobuf.Empty);
+    rpc GenerateUploadURL(GenerateUploadURLRequest) returns (GenerateUploadURLResponse);
+    rpc UpdateProductImage(UpdateProductImageRequest) returns (google.protobuf.Empty);
 }
 
 message Sneaker {
-    int64 id = 1;
-    string title = 2;
-    float price = 3;
-    string image_url = 4;
+    int64  id        = 1;
+    string title     = 2;
+    float  price     = 3;
+    string image_key = 4; 
 }
 
 message AddSneakerRequest {
-    string title = 1;
-    float price = 2;
-    string image_url = 3;
+    string title     = 1;
+    float  price     = 2;
+}
+
+message GenerateUploadURLRequest {
+  string original_filename = 1; 
+  string content_type      = 2; 
 }
 
 message GetSneakerByIDRequest {
+    int64 id = 1;
+}
+
+message UpdateProductImageRequest {
+  int64 product_id = 1;
+  string image_key = 2;
+}
+
+message DeleteSneakerRequest {
     int64 id = 1;
 }
 
@@ -35,19 +50,20 @@ message GetSneakersByIDsRequest {
     repeated int64 ids = 1;
 }
 
-message GetSneakersByIDsResponse {
-    repeated Sneaker sneakers = 1;
+message GetAllSneakersRequest {
+    uint64 limit = 1;  // Добавлено
+    uint64 offset = 2; // Добавлено
 }
 
-message GetAllSneakersRequest {
-    // В будущем здесь могут быть параметры для пагинации
+message GenerateUploadURLResponse {
+  string upload_url = 1; 
+  string file_key   = 2;   
+}
+
+message GetSneakersByIDsResponse {
+    repeated Sneaker sneakers = 1;
 }
 
 message GetAllSneakersResponse {
     repeated Sneaker sneakers = 1;
 }
-
-message DeleteSneakerRequest {
-    int64 id = 1;
-}
-

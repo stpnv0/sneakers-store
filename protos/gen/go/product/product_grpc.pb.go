@@ -20,11 +20,13 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	Product_AddSneaker_FullMethodName       = "/product.Product/AddSneaker"
-	Product_GetSneakerByID_FullMethodName   = "/product.Product/GetSneakerByID"
-	Product_GetSneakersByIDs_FullMethodName = "/product.Product/GetSneakersByIDs"
-	Product_GetAllSneakers_FullMethodName   = "/product.Product/GetAllSneakers"
-	Product_DeleteSneaker_FullMethodName    = "/product.Product/DeleteSneaker"
+	Product_AddSneaker_FullMethodName         = "/product.Product/AddSneaker"
+	Product_GetSneakerByID_FullMethodName     = "/product.Product/GetSneakerByID"
+	Product_GetSneakersByIDs_FullMethodName   = "/product.Product/GetSneakersByIDs"
+	Product_GetAllSneakers_FullMethodName     = "/product.Product/GetAllSneakers"
+	Product_DeleteSneaker_FullMethodName      = "/product.Product/DeleteSneaker"
+	Product_GenerateUploadURL_FullMethodName  = "/product.Product/GenerateUploadURL"
+	Product_UpdateProductImage_FullMethodName = "/product.Product/UpdateProductImage"
 )
 
 // ProductClient is the client API for Product service.
@@ -36,6 +38,8 @@ type ProductClient interface {
 	GetSneakersByIDs(ctx context.Context, in *GetSneakersByIDsRequest, opts ...grpc.CallOption) (*GetSneakersByIDsResponse, error)
 	GetAllSneakers(ctx context.Context, in *GetAllSneakersRequest, opts ...grpc.CallOption) (*GetAllSneakersResponse, error)
 	DeleteSneaker(ctx context.Context, in *DeleteSneakerRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	GenerateUploadURL(ctx context.Context, in *GenerateUploadURLRequest, opts ...grpc.CallOption) (*GenerateUploadURLResponse, error)
+	UpdateProductImage(ctx context.Context, in *UpdateProductImageRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type productClient struct {
@@ -96,6 +100,26 @@ func (c *productClient) DeleteSneaker(ctx context.Context, in *DeleteSneakerRequ
 	return out, nil
 }
 
+func (c *productClient) GenerateUploadURL(ctx context.Context, in *GenerateUploadURLRequest, opts ...grpc.CallOption) (*GenerateUploadURLResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GenerateUploadURLResponse)
+	err := c.cc.Invoke(ctx, Product_GenerateUploadURL_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *productClient) UpdateProductImage(ctx context.Context, in *UpdateProductImageRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, Product_UpdateProductImage_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProductServer is the server API for Product service.
 // All implementations must embed UnimplementedProductServer
 // for forward compatibility.
@@ -105,6 +129,8 @@ type ProductServer interface {
 	GetSneakersByIDs(context.Context, *GetSneakersByIDsRequest) (*GetSneakersByIDsResponse, error)
 	GetAllSneakers(context.Context, *GetAllSneakersRequest) (*GetAllSneakersResponse, error)
 	DeleteSneaker(context.Context, *DeleteSneakerRequest) (*emptypb.Empty, error)
+	GenerateUploadURL(context.Context, *GenerateUploadURLRequest) (*GenerateUploadURLResponse, error)
+	UpdateProductImage(context.Context, *UpdateProductImageRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedProductServer()
 }
 
@@ -129,6 +155,12 @@ func (UnimplementedProductServer) GetAllSneakers(context.Context, *GetAllSneaker
 }
 func (UnimplementedProductServer) DeleteSneaker(context.Context, *DeleteSneakerRequest) (*emptypb.Empty, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method DeleteSneaker not implemented")
+}
+func (UnimplementedProductServer) GenerateUploadURL(context.Context, *GenerateUploadURLRequest) (*GenerateUploadURLResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method GenerateUploadURL not implemented")
+}
+func (UnimplementedProductServer) UpdateProductImage(context.Context, *UpdateProductImageRequest) (*emptypb.Empty, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method UpdateProductImage not implemented")
 }
 func (UnimplementedProductServer) mustEmbedUnimplementedProductServer() {}
 func (UnimplementedProductServer) testEmbeddedByValue()                 {}
@@ -241,6 +273,42 @@ func _Product_DeleteSneaker_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _Product_GenerateUploadURL_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GenerateUploadURLRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProductServer).GenerateUploadURL(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Product_GenerateUploadURL_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProductServer).GenerateUploadURL(ctx, req.(*GenerateUploadURLRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _Product_UpdateProductImage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateProductImageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProductServer).UpdateProductImage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: Product_UpdateProductImage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProductServer).UpdateProductImage(ctx, req.(*UpdateProductImageRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // Product_ServiceDesc is the grpc.ServiceDesc for Product service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -267,6 +335,14 @@ var Product_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteSneaker",
 			Handler:    _Product_DeleteSneaker_Handler,
+		},
+		{
+			MethodName: "GenerateUploadURL",
+			Handler:    _Product_GenerateUploadURL_Handler,
+		},
+		{
+			MethodName: "UpdateProductImage",
+			Handler:    _Product_UpdateProductImage_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
