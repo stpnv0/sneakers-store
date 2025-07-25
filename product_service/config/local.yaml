@@ -1,0 +1,22 @@
+env: "docker"
+
+grpc:
+  port: 44045
+  timeout: 10s
+
+database:
+  host: "product_postgres" 
+  port: 5432             
+  user: "product_user"
+  password: "product_password"
+  dbname: "product_db"
+
+redis:
+  addr: "product_redis:6379" 
+
+s3:  
+  endpoint: "minio:9000"  
+  access_key: "admin"
+  secret_key: "admin123"
+
+cache_ttl: 10m
