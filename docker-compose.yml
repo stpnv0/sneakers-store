@@ -264,6 +264,77 @@ services:
     networks:
       - sneakers_network
 
+  product_postgres:
+    image: postgres:15-alpine
+    container_name: product_postgres
+    environment:
+      POSTGRES_USER: product_user      
+      POSTGRES_PASSWORD: product_password
+      POSTGRES_DB: product_db
+    ports:
+      - "5435:5432" 
+    volumes:
+      - product_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U product_user -d product_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+
+  product_redis:
+    image: redis:alpine
+    container_name: product_redis
+    ports:
+      - "6382:6379" 
+    volumes:
+      - product_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"  
+      - "9001:9001"  
+    environment:
+      MINIO_ROOT_USER: admin  
+      MINIO_ROOT_PASSWORD: admin123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+  product_service:
+    build:
+      context: . 
+      dockerfile: ./product_service/Dockerfile 
+    container_name: product_service
+    ports:
+      - "44045:44045"
+    environment:
+      - ENV=docker
+      - CONFIG_PATH=./config/docker.yaml
+    depends_on:
+      product_postgres:
+        condition: service_healthy
+      product_redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+
 networks:
   sneakers_network:
     driver: bridge
@@ -276,3 +347,6 @@ volumes:
   favourites_postgres_data:
   favourites_redis_data:
   sso_data:
+  product_postgres_data:
+  product_redis_data:
+  minio_data:
