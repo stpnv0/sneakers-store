@@ -330,6 +330,8 @@ services:
       minio:
         condition: service_started
     restart: unless-stopped
+    networks:
+      - sneakers_network
 
   api_gateway:
     build:
