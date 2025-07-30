@@ -8,11 +8,9 @@ import (
 )
 
 type Config struct {
-	Env        string        `yaml:"env"`
-	AppSecret  string        `yaml:"app_secret"`
-	HTTPServer HTTPServer    `yaml:"http_server"`
-	Redis      RedisConfig   `yaml:"redis"`
-	Clients    ClientsConfig `yaml:"clients"`
+	Env        string      `yaml:"env"`
+	HTTPServer HTTPServer  `yaml:"http_server"`
+	Redis      RedisConfig `yaml:"redis"`
 }
 
 type HTTPServer struct {
@@ -28,16 +26,6 @@ type RedisConfig struct {
 	Password   string `yaml:"password"`
 	DB         int    `yaml:"db"`
 	Expiration string `yaml:"expiration"`
-}
-
-type ClientsConfig struct {
-	MainService MainServiceConfig `yaml:"main_service"`
-}
-
-type MainServiceConfig struct {
-	URL        string `yaml:"url"`
-	Timeout    string `yaml:"timeout"`
-	RetryCount int    `yaml:"retry_count"`
 }
 
 // Load загружает конфигурацию из файла
