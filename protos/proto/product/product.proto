@@ -51,8 +51,8 @@ message GetSneakersByIDsRequest {
 }
 
 message GetAllSneakersRequest {
-    uint64 limit = 1;  // Добавлено
-    uint64 offset = 2; // Добавлено
+    uint64 limit = 1;  
+    uint64 offset = 2;
 }
 
 message GenerateUploadURLResponse {

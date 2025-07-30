@@ -380,8 +380,8 @@ func (x *GetSneakersByIDsRequest) GetIds() []int64 {
 
 type GetAllSneakersRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	Limit         uint64                 `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`   // Добавлено
-	Offset        uint64                 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"` // Добавлено
+	Limit         uint64                 `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	Offset        uint64                 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
