@@ -13,9 +13,11 @@ type Config struct {
 }
 
 type DownstreamConfig struct {
-	Cart       string `mapstructure:"cart"`
-	Favourites string `mapstructure:"favourites"`
-	Backend    string `mapstructure:"backend"`
+	Cart        string `mapstructure:"cart"`
+	Favourites  string `mapstructure:"favourites"`
+	Backend     string `mapstructure:"backend"`
+	ProductgRPC string `mapstructure:"product_grpc"`
+	SSOgRPC     string `mapstructure:"sso_grpc"`
 }
 
 func Load(path string) *Config {

@@ -16,3 +16,11 @@ type Cart struct {
 	Items     []CartItem `json:"items"`
 	UpdatedAt time.Time  `json:"updated_at"`
 }
+
+type EnrichedCartItemResponse struct {
+	ID       int64   `json:"id"`
+	Title    string  `json:"title"`
+	Price    float32 `json:"price"`
+	ImageKey string  `json:"image_key"`
+	Quantity int     `json:"quantity"`
+}
