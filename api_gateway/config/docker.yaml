@@ -4,3 +4,5 @@ downstream:
   cart: "http://sneakers_cart:8081"
   favourites: "http://sneakers_favourites:8082"
   backend: "http://sneakers_backend:8080"
+  product_grpc: "product_service:44045"
+  sso_grpc: "sneakers_sso:44044"
