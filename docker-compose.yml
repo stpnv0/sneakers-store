@@ -6,7 +6,7 @@ services:
       - "80:80" 
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro 
-      - ./sneakers_store/frontend/dist:/var/www/frontend:ro 
+      - ./frontend/dist:/var/www/frontend:ro 
       - ./nginx/logs:/var/log/nginx 
     depends_on:
       - api_gateway
@@ -14,19 +14,20 @@ services:
     networks:
       - sneakers_network
 
-  postgres:
-    image: postgres:13-alpine
-    container_name: sneakers_db
+  # Product Service Database
+  product_postgres:
+    image: postgres:15-alpine
+    container_name: product_postgres
     environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: sneaker
+      POSTGRES_USER: product_user
+      POSTGRES_PASSWORD: product_password
+      POSTGRES_DB: product_db
     ports:
-      - "5432:5432"
+      - "5435:5432"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - product_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U root -d sneaker"]
+      test: ["CMD-SHELL", "pg_isready -U product_user -d product_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -34,18 +35,60 @@ services:
     networks:
       - sneakers_network
 
-  redis:
+  # Product Service Redis
+  product_redis:
     image: redis:alpine
-    container_name: sneakers_redis
+    container_name: product_redis
     ports:
-      - "6379:6379"
+      - "6382:6379"
     volumes:
-      - redis_data:/data
+      - product_redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+
+  # MinIO for file storage
+  minio:
+    image: minio/minio:latest
+    container_name: minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: admin123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - sneakers_network
+
+  # Product Service
+  product_service:
+    build:
+      context: .
+      dockerfile: ./product_service/Dockerfile
+    container_name: product_service
+    depends_on:
+      product_postgres:
+        condition: service_healthy
+      product_redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy 
+    environment:
+      - CONFIG_PATH=./config/docker.yaml
     restart: unless-stopped
     networks:
       - sneakers_network
@@ -158,39 +201,6 @@ services:
     networks:
       - sneakers_network
 
-  backend:
-    build:
-      context: ./sneakers_store/backend
-      dockerfile: Dockerfile
-    container_name: sneakers_backend
-    depends_on:
-      postgres:
-        condition: service_healthy
-      migrator:
-        condition: service_completed_successfully
-    environment:
-      - DB_HOST=postgres
-      - CART_SERVICE_INTERNAL_URL=http://sneakers_cart:8081 
-      - FAVOURITES_SERVICE_INTERNAL_URL=http://sneakers_favourites:8082
-      - SSO_SERVICE_GRPC_TARGET=sneakers_sso:44044
-    restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    networks:
-      - sneakers_network
-
-  migrator:
-    image: migrate/migrate:latest
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./sneakers_store/backend/db/migrations:/migrations
-    command: ["-path", "/migrations", "-database", "postgresql://root:password@postgres:5432/sneaker?sslmode=disable", "up"]
-    restart: on-failure
-    networks:
-      - sneakers_network
-
   cart_service:
     build:
       context: ./cart_service
@@ -207,6 +217,7 @@ services:
       - REDIS_HOST=cart_redis
       - REDIS_PORT=6379
       - POSTGRES_DSN=postgres://cart_user:cart_password@cart_postgres:5432/cart_db?sslmode=disable
+      - PRODUCT_SERVICE_GRPC_TARGET=product_service:44045
     restart: unless-stopped
     networks:
       - sneakers_network
@@ -248,104 +259,39 @@ services:
       context: .
       dockerfile: sso_service/Dockerfile
     container_name: sneakers_sso
-    restart: unless-stopped
     depends_on:
       sso_migrations:
         condition: service_completed_successfully
-    ports:
-      - "44044:44044"
     volumes:
       - sso_data:/root/storage
     environment:
       - GIN_MODE=release
       - STORAGE_PATH=/root/storage/sso.db
-    networks:
-      - sneakers_network
-      
-  product_postgres:
-    image: postgres:15-alpine
-    container_name: product_postgres
-    environment:
-      POSTGRES_USER: product_user      
-      POSTGRES_PASSWORD: product_password
-      POSTGRES_DB: product_db
-    ports:
-      - "5435:5432" 
-    volumes:
-      - product_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U product_user -d product_db"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - sneakers_network
-
-  product_redis:
-    image: redis:alpine
-    container_name: product_redis
-    ports:
-      - "6382:6379" 
-    volumes:
-      - product_redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - sneakers_network
-  minio:
-    image: minio/minio:latest
-    container_name: minio
-    ports:
-      - "9000:9000"  
-      - "9001:9001"  
-    environment:
-      MINIO_ROOT_USER: admin  
-      MINIO_ROOT_PASSWORD: admin123
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio_data:/data
-    restart: unless-stopped
-    networks:
-      - sneakers_network
-  product_service:
-    build:
-      context: . 
-      dockerfile: ./product_service/Dockerfile 
-    container_name: product_service
-    ports:
-      - "44045:44045"
-    environment:
-      - ENV=docker
-      - CONFIG_PATH=./config/docker.yaml
-    depends_on:
-      product_postgres:
-        condition: service_healthy
-      product_redis:
-        condition: service_healthy
-      minio:
-        condition: service_started
     restart: unless-stopped
     networks:
       - sneakers_network
 
   api_gateway:
     build:
-      context: ./api_gateway
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./api_gateway/Dockerfile
     container_name: sneakers_api_gateway
     ports:
       - "8083:8083"
     restart: unless-stopped
     depends_on:
-      - backend
-      - cart_service
-      - favourites_service
-      - sso_service
+      product_service:
+        condition: service_started 
+      cart_service:
+        condition: service_started
+      favourites_service:
+        condition: service_started
+      sso_service:
+        condition: service_started
+    environment:
+      - CONFIG_PATH=./config/docker.yaml
+    volumes:
+      - ./protos:/app/protos
     networks:
       - sneakers_network
 
@@ -354,8 +300,6 @@ networks:
     driver: bridge
 
 volumes:
-  postgres_data:
-  redis_data:
   cart_postgres_data:
   cart_redis_data:
   favourites_postgres_data:
