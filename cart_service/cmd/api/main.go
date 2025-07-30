@@ -7,7 +7,6 @@ import (
 	"cart_service/internal/router"
 	"cart_service/internal/services"
 	"context"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -20,95 +19,76 @@ import (
 )
 
 func main() {
-	// Инициализация логгера
-	slogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
-
-	// Загрузка конфигурации
 	cfg := config.MustLoad()
 
-	// Подключение к Redis
-	redisClient := redis.NewClient(&redis.Options{
-		Addr:     cfg.Redis.Host + ":" + strconv.Itoa(cfg.Redis.Port),
-		Password: cfg.Redis.Password,
-		DB:       cfg.Redis.DB,
-	})
+	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})).With(slog.String("service", "cart"))
 
-	// Проверка соединения с Redis
-	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		slogger.Error("Failed to connect to Redis", "error", err)
-		os.Exit(1)
-	}
+	redisClient := mustInitRedis(cfg, log)
 
-	// Подключение к PostgreSQL
-	pgDSN := os.Getenv("POSTGRES_DSN")
-	if pgDSN == "" {
-		pgDSN = "postgres://root:password@postgres:5432/sneaker?sslmode=disable"
-		slogger.Info("Using default PostgreSQL DSN")
-	}
-
-	db, err := repository.NewPostgresDB(pgDSN)
+	db, err := repository.NewPostgresDB(cfg.Postgres.DSN)
 	if err != nil {
-		slogger.Error("Failed to connect to PostgreSQL", "error", err)
+		log.Error("failed to connect to PostgreSQL", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 	defer db.Close()
 
-	// Инициализация репозиториев
 	redisRepo := repository.NewRedisRepository(redisClient)
 	pgRepo := repository.NewPostgresRepository(db)
 
-	// Настраиваем стандартный логгер для сервиса корзины
-	logger := log.New(os.Stdout, "[CART] ", log.LstdFlags)
-
-	// Инициализация сервиса корзины с Cache-Aside паттерном
 	cartService := services.NewCartCacheAsideService(
 		pgRepo,
 		redisRepo,
-		logger,
-		24*time.Hour, // TTL для кэша - 24 часа
+		log,
+		24*time.Hour,
 	)
 
-	// Инициализация обработчиков HTTP с адаптацией интерфейса
-	cartHandler := handlers.NewCartHandler(cartService)
+	cartHandler := handlers.NewCartHandler(cartService, log)
 
-	// Инициализация и настройка роутера
 	r := router.InitRouter(cartHandler)
+	runServer(r, cfg, log)
+}
 
-	// Запуск HTTP-сервера
+func mustInitRedis(cfg *config.Config, log *slog.Logger) *redis.Client {
+	addr := cfg.Redis.Host + ":" + strconv.Itoa(cfg.Redis.Port)
+	client := redis.NewClient(&redis.Options{
+		Addr:     addr,
+		Password: cfg.Redis.Password,
+		DB:       cfg.Redis.DB,
+	})
+	if err := client.Ping(context.Background()).Err(); err != nil {
+		log.Error("failed to connect to Redis", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+	log.Info("successfully connected to Redis", slog.String("addr", addr))
+	return client
+}
+
+func runServer(handler http.Handler, cfg *config.Config, log *slog.Logger) {
 	server := &http.Server{
 		Addr:         cfg.HTTPServer.Address,
-		Handler:      r,
+		Handler:      handler,
 		ReadTimeout:  10 * time.Second,
 		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
 	}
 
-	// Запускаем сервер в горутине
 	go func() {
-		slogger.Info("Starting cart service", "address", cfg.HTTPServer.Address)
+		log.Info("starting cart service", slog.String("address", cfg.HTTPServer.Address))
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slogger.Error("Failed to start server", "error", err)
+			log.Error("server failed to start", slog.String("error", err.Error()))
 			os.Exit(1)
 		}
 	}()
 
-	// Настраиваем грациозное завершение
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
-	// Блокируемся пока не получим сигнал
 	<-quit
-	slogger.Info("Shutting down server...")
+	log.Info("shutting down server...")
 
-	// Создаем контекст с таймаутом для грациозного завершения
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	if err := server.Shutdown(ctx); err != nil {
-		slogger.Error("Server forced to shutdown", "error", err)
+		log.Error("server forced to shutdown", slog.String("error", err.Error()))
 	}
-
-	slogger.Info("Server exiting")
+	log.Info("server exiting")
 }

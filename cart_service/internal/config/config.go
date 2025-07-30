@@ -8,11 +8,10 @@ import (
 )
 
 type Config struct {
-	Env        string        `yaml:"env"`
-	AppSecret  string        `yaml:"app_secret"`
-	HTTPServer HTTPServer    `yaml:"http_server"`
-	Redis      RedisConfig   `yaml:"redis"`
-	Clients    ClientsConfig `yaml:"clients"`
+	Env        string         `yaml:"env"`
+	HTTPServer HTTPServer     `yaml:"http_server"`
+	Redis      RedisConfig    `yaml:"redis"`
+	Postgres   PostgresConfig `yaml:"postgres"`
 }
 
 type HTTPServer struct {
@@ -30,14 +29,8 @@ type RedisConfig struct {
 	Expiration string `yaml:"expiration"`
 }
 
-type ClientsConfig struct {
-	MainService MainServiceConfig `yaml:"main_service"`
-}
-
-type MainServiceConfig struct {
-	URL        string `yaml:"url"`
-	Timeout    string `yaml:"timeout"`
-	RetryCount int    `yaml:"retry_count"`
+type PostgresConfig struct {
+	DSN string `yaml:"dsn" env:"POSTGRES_DSN" env-required:"true"`
 }
 
 // Load загружает конфигурацию из файла
