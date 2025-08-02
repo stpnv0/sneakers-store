@@ -45,12 +45,22 @@ git clone https://github.com/stpnv0/sneakers-store.git
 cd sneakers-store
 ```
 
-2. Запустите все сервисы через Docker Compose:
+2. Переходим в папку с фронтендом и устанавливаем все зависимости
+```bash
+cd frontend && npm install
+```
+
+3. Запускаем сборку и возвращаемся в корень
+```bash
+npm run build && cd ..
+```
+
+4. Запустите все сервисы через Docker Compose:
 ```bash
 docker compose up -d
 ```
 
-3. Приложение будет доступно на http://localhost
+5. Приложение будет доступно на http://localhost
 
 ### Структура проекта
 Проект организован как монорепозиторий. Каждый сервис находится в своей директории:
