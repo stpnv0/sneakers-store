@@ -14,7 +14,7 @@ func InitRouter(favHandler *handlers.FavHandler) *gin.Engine {
 	fav := router.Group("/api/v1/favourites")
 	fav.Use(middleware.ExtractUserID())
 	{
-		fav.POST("с/", favHandler.AddToFavourite)
+		fav.POST("/", favHandler.AddToFavourite)
 		fav.GET("/", favHandler.GetAllFavourites)
 		fav.DELETE("/:id/", favHandler.RemoveFromFavourite)
 		fav.GET("/:id/", favHandler.IsFavourite)
