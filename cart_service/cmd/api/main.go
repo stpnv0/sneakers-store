@@ -25,7 +25,7 @@ func main() {
 
 	redisClient := mustInitRedis(cfg, log)
 
-	db, err := repository.NewPostgresDB(cfg.Postgres.DSN)
+	db, err := repository.NewPostgresDB(cfg.Postgres.DSN())
 	if err != nil {
 		log.Error("failed to connect to PostgreSQL", slog.String("error", err.Error()))
 		os.Exit(1)

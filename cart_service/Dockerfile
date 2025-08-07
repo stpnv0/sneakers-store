@@ -1,23 +1,29 @@
-FROM golang:1.23-alpine
+FROM golang:1.23-alpine AS builder
+
+WORKDIR /app
+RUN apk add --no-cache git
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+RUN CGO_ENABLED=0 GOOS=linux go build -o cart_service ./cmd/api && \
+    CGO_ENABLED=0 GOOS=linux go build -o cart_migrator ./cmd/migrator
+
+FROM alpine:latest
+
+RUN apk --no-cache add ca-certificates tzdata
 
 WORKDIR /app
 
-# Установка зависимостей
-RUN apk add --no-cache redis postgresql-client
+COPY --from=builder --chmod=755 /app/cart_service /app/cart_service
+COPY --from=builder --chmod=755 /app/cart_migrator /app/cart_migrator
+COPY --from=builder /app/config /app/config
+COPY --from=builder /app/migrations /app/migrations
 
-# Сделаем выполняемым скрипт миграций
-COPY scripts/run_migrations.sh /app/scripts/run_migrations.sh
-RUN chmod +x /app/scripts/run_migrations.sh
+ENV GIN_MODE=release
 
-# Установка зависимостей Go
-COPY go.mod go.sum ./
-RUN go mod tidy && go mod download
+EXPOSE 8081 
 
-# Копирование исходного кода
-COPY . .
-
-# Сборка приложения
-RUN go build -o main cmd/api/main.go
-
-# Запуск приложения
-CMD ["./main"]
+CMD ["/app/cart_service"]

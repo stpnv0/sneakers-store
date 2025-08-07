@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -30,7 +31,35 @@ type RedisConfig struct {
 }
 
 type PostgresConfig struct {
-	DSN string `yaml:"dsn" env:"POSTGRES_DSN" env-required:"true"`
+	Host               string `yaml:"host"`
+	Port               int    `yaml:"port"`
+	User               string `yaml:"user"`
+	Password           string `yaml:"password"`
+	DBName             string `yaml:"dbname"`
+	SSLMode            string `yaml:"sslmode"`
+	MaxConnections     int    `yaml:"max_connections"`
+	ConnectionTimeoutS int    `yaml:"connection_timeout"`
+}
+
+func (p PostgresConfig) DSN() string {
+	host := p.Host
+	if host == "" {
+		host = "localhost"
+	}
+	port := p.Port
+	if port == 0 {
+		port = 5432
+	}
+	sslmode := p.SSLMode
+	if sslmode == "" {
+		sslmode = "disable"
+	}
+	return fmt.Sprintf(
+		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		url.QueryEscape(p.User),
+		url.QueryEscape(p.Password),
+		host, port, p.DBName, sslmode,
+	)
 }
 
 // Load загружает конфигурацию из файла

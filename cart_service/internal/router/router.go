@@ -10,7 +10,7 @@ import (
 func InitRouter(cartHandler *handlers.CartHandler) *gin.Engine {
 	router := gin.Default()
 
-	cart := router.Group("/api/v1")
+	cart := router.Group("/api/v1/cart")
 	cart.Use(middleware.ExtractUserID())
 	{
 		cart.POST("/", cartHandler.AddToCart)
