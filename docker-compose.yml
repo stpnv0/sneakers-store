@@ -188,12 +188,9 @@ services:
       context: ./fav_service
       dockerfile: Dockerfile
     container_name: favourites_migrations
-    command: sh /app/scripts/run_migrations.sh
+    command: ["/app/fav_migrator", "--migrations-path=/app/migrations", "--migrations-table=favourites_migrations"]
     environment:
-      - POSTGRES_HOST=favourites_postgres
-      - POSTGRES_USER=favourites_user
-      - POSTGRES_PASSWORD=favourites_password
-      - POSTGRES_DB=favourites_db
+      - POSTGRES_DSN=postgres://favourites_user:favourites_password@favourites_postgres:5432/favourites_db?sslmode=disable
     depends_on:
       favourites_postgres:
         condition: service_healthy
@@ -232,10 +229,10 @@ services:
         condition: service_healthy
       favourites_redis:
         condition: service_healthy
+      favourites_migrations:
+        condition: service_completed_successfully
     environment:
       - POSTGRES_DSN=postgres://favourites_user:favourites_password@favourites_postgres:5432/favourites_db?sslmode=disable
-      - REDIS_HOST=favourites_redis
-      - REDIS_PORT=6379
     restart: unless-stopped
     networks:
       - sneakers_network

@@ -9,13 +9,13 @@ import (
 
 func InitRouter(favHandler *handlers.FavHandler) *gin.Engine {
 	router := gin.Default()
+	router.RedirectTrailingSlash = false
 
-	// API группа
-	fav := router.Group("")
+	fav := router.Group("/api/v1/favourites")
 	fav.Use(middleware.ExtractUserID())
 	{
-		fav.POST("", favHandler.AddToFavourite)
-		fav.GET("", favHandler.GetAllFavourites)
+		fav.POST("с/", favHandler.AddToFavourite)
+		fav.GET("/", favHandler.GetAllFavourites)
 		fav.DELETE("/:id/", favHandler.RemoveFromFavourite)
 		fav.GET("/:id/", favHandler.IsFavourite)
 		fav.GET("/batch", favHandler.GetFavouritesByIDs)

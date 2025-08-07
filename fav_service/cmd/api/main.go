@@ -41,12 +41,7 @@ func main() {
 	}
 
 	// Подключение к PostgreSQL
-	pgDSN := os.Getenv("POSTGRES_DSN")
-	if pgDSN == "" {
-		pgDSN = "postgres://root:password@postgres:5432/sneaker?sslmode=disable"
-		slogger.Info("Using default PostgreSQL DSN")
-	}
-
+	pgDSN := cfg.Postgres.DSN()
 	db, err := repository.NewPostgresDB(pgDSN)
 	if err != nil {
 		slogger.Error("Failed to connect to PostgreSQL", "error", err)
@@ -81,7 +76,7 @@ func main() {
 
 	// Запускаем сервер в горутине
 	go func() {
-		slogger.Info("Starting cart service", "address", cfg.HTTPServer.Address)
+		slogger.Info("Starting favourites service", "address", cfg.HTTPServer.Address)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slogger.Error("Failed to start server", "error", err)
 			os.Exit(1)

@@ -1,49 +1,31 @@
-FROM golang:1.21-alpine AS builder
+# Build stage
+FROM golang:1.23-alpine AS builder
 
-# Install necessary dependencies including PostgreSQL client
-RUN apk add --no-cache git postgresql-client
-
-# Set working directory
 WORKDIR /app
+RUN apk add --no-cache git
 
-# Copy go.mod and go.sum files
 COPY go.mod go.sum ./
-
-# Download dependencies
 RUN go mod download
 
-# Copy source code
 COPY . .
 
-# Build the application
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o fav_service ./cmd/api
+RUN CGO_ENABLED=0 GOOS=linux go build -o fav_service ./cmd/api && \
+    CGO_ENABLED=0 GOOS=linux go build -o fav_migrator ./cmd/migrator
 
 # Final image
 FROM alpine:latest
 
-# Install necessary packages including PostgreSQL client
-RUN apk --no-cache add ca-certificates tzdata postgresql-client
+RUN apk --no-cache add ca-certificates tzdata
 
-# Set working directory
 WORKDIR /app
 
-# Copy binary from builder stage
-COPY --from=builder /app/fav_service .
-
-# Copy configuration files
+COPY --from=builder /app/fav_service /app/fav_service
+COPY --from=builder /app/fav_migrator /app/fav_migrator
 COPY --from=builder /app/config /app/config
+COPY --from=builder /app/migrations /app/migrations
 
-# Copy migration scripts
-COPY --from=builder /app/scripts /app/scripts
-
-# Make migration script executable
-RUN chmod +x /app/scripts/run_migrations.sh
-
-# Set environment variables
 ENV GIN_MODE=release
 
-# Expose port
 EXPOSE 8082
 
-# Run the application
 CMD ["/app/fav_service"]
