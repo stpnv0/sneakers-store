@@ -134,12 +134,9 @@ services:
       context: ./cart_service
       dockerfile: Dockerfile
     container_name: cart_migrations
-    command: sh /app/scripts/run_migrations.sh
+    command: ["/app/cart_migrator", "-migrations-path=/app/migrations", "-migrations-table=cart_migrations"]
     environment:
-      - POSTGRES_HOST=cart_postgres
-      - POSTGRES_USER=cart_user
-      - POSTGRES_PASSWORD=cart_password
-      - POSTGRES_DB=cart_db
+      - POSTGRES_DSN=postgres://cart_user:cart_password@cart_postgres:5432/cart_db?sslmode=disable
     depends_on:
       cart_postgres:
         condition: service_healthy
@@ -210,11 +207,6 @@ services:
         condition: service_healthy
       cart_migrations:
         condition: service_completed_successfully
-    environment:
-      - REDIS_HOST=cart_redis
-      - REDIS_PORT=6379
-      - POSTGRES_DSN=postgres://cart_user:cart_password@cart_postgres:5432/cart_db?sslmode=disable
-      - PRODUCT_SERVICE_GRPC_TARGET=product_service:44045
     restart: unless-stopped
     networks:
       - sneakers_network
