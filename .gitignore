@@ -20,3 +20,9 @@ build/
 .vscode/
 
 .DS_Store
+.idea/
+.vscode/
+
+# Service configurations
+**/config/config.yaml
+**/config/local.yaml
