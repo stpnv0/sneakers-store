@@ -9,10 +9,10 @@ export const CartContext = createContext({
   totalPrice: 0,
   isInCart: () => false,
   getQuantity: () => 0,
-  addToCart: () => {},
-  removeFromCart: () => {},
-  increaseQuantity: () => {},
-  decreaseQuantity: () => {},
+  addToCart: () => { },
+  removeFromCart: () => { },
+  increaseQuantity: () => { },
+  decreaseQuantity: () => { },
   getTotalPrice: () => 0,
   getTaxAmount: () => 0,
   error: null
@@ -36,13 +36,13 @@ export const CartProvider = ({ children }) => {
     try {
       setIsLoading(true);
       setError(null);
-      
+
       // Добавляем timestamp для предотвращения кэширования и слеш в конце URL
       const timestamp = new Date().getTime();
       const response = await axios.get(`/api/v1/cart/`);
-      
+
       logger.info('Получены данные корзины', response.data);
-      
+
       let cartArray = [];
       if (response.data && Array.isArray(response.data)) {
         cartArray = response.data;
@@ -57,10 +57,10 @@ export const CartProvider = ({ children }) => {
           cartArray = possibleArrays[0];
         }
       }
-      
+
       // Логирование без вывода всех деталей товаров
       logger.info('Загружено товаров в корзине', { count: cartArray.length });
-      
+
       setCartItems(cartArray);
       logger.info('Корзина загружена', { count: cartArray.length });
     } catch (err) {
@@ -104,19 +104,19 @@ export const CartProvider = ({ children }) => {
 
     try {
       setIsLoading(true);
-      
+
       if (isInCart(sneakerId)) {
         // Если товар уже в корзине - увеличиваем количество
         return await increaseQuantity(sneakerId);
       }
-      
+
       // Добавляем товар в корзину - обратите внимание на слеш в конце URL
       const response = await axios.post('/api/v1/cart/', { sneaker_id: sneakerId, quantity: 1 });
       console.log('Ответ при добавлении в корзину:', response.data);
-      
+
       // Оптимистично обновляем UI
       setCartItems(prev => [...prev, { sneaker_id: sneakerId, quantity: 1 }]);
-      
+
       logger.info('Товар добавлен в корзину', { sneakerId });
       // Обновляем данные с сервера
       await fetchCart();
@@ -136,24 +136,24 @@ export const CartProvider = ({ children }) => {
 
     try {
       setIsLoading(true);
-      
+
       const item = cartItems.find(item => item.sneaker_id === sneakerId);
       if (!item || !item.id) {
         console.warn('Не удалось найти ID записи для удаления из корзины', item);
         return;
       }
-      
+
       logger.info('Отправляем запрос на удаление товара', { itemId: item.id });
       const response = await axios.delete(`/api/v1/cart/${item.id}`);
-      
+
       // Оптимистично обновляем UI
       setCartItems(prev => prev.filter(item => item.sneaker_id !== sneakerId));
-      
+
       logger.info('Товар удален из корзины', { sneakerId });
     } catch (err) {
       logger.error('Ошибка при удалении товара из корзины', err);
       setError(err.response?.data?.error || 'Не удалось удалить товар из корзины');
-      
+
       // Обновляем корзину с сервера в случае ошибки
       await fetchCart();
     } finally {
@@ -168,39 +168,39 @@ export const CartProvider = ({ children }) => {
 
     try {
       setIsLoading(true);
-      
+
       const item = cartItems.find(item => item.sneaker_id === sneakerId);
       if (!item || !item.id) {
         console.warn('Не удалось найти ID записи для увеличения количества', item);
         return;
       }
-      
+
       const newQuantity = item.quantity + 1;
-      
+
       // Оптимистично обновляем UI
-      setCartItems(prev => prev.map(cartItem => 
-        cartItem.sneaker_id === sneakerId 
-          ? { ...cartItem, quantity: newQuantity } 
+      setCartItems(prev => prev.map(cartItem =>
+        cartItem.sneaker_id === sneakerId
+          ? { ...cartItem, quantity: newQuantity }
           : cartItem
       ));
-      
-      console.log(`Отправляем запрос на увеличение количества: PUT /api/v1/cart/${item.id}`, { 
-        sneaker_id: sneakerId, 
-        quantity: newQuantity 
+
+      console.log(`Отправляем запрос на увеличение количества: PUT /api/v1/cart/${item.id}`, {
+        sneaker_id: sneakerId,
+        quantity: newQuantity
       });
-      
-      const response = await axios.put(`/api/v1/cart/${item.id}`, { 
-        sneaker_id: sneakerId, 
-        quantity: newQuantity 
+
+      const response = await axios.put(`/api/v1/cart/${item.id}`, {
+        sneaker_id: sneakerId,
+        quantity: newQuantity
       });
-      
+
       console.log('Ответ сервера на увеличение количества:', response.data);
       logger.info('Увеличено количество товара в корзине', { sneakerId, quantity: newQuantity });
     } catch (err) {
       logger.error('Ошибка при увеличении количества товара', err);
       console.error('Детали ошибки:', err.response || err);
       setError(err.response?.data?.error || 'Не удалось увеличить количество товара');
-      
+
       // Обновляем корзину с сервера в случае ошибки
       await fetchCart();
     } finally {
@@ -215,42 +215,42 @@ export const CartProvider = ({ children }) => {
 
     try {
       setIsLoading(true);
-      
+
       const item = cartItems.find(item => item.sneaker_id === sneakerId);
       if (!item || !item.id) {
         console.warn('Не удалось найти ID записи для уменьшения количества', item);
         return;
       }
-      
+
       // Если количество = 1, удаляем товар из корзины
       if (item.quantity <= 1) {
         return await removeFromCart(sneakerId);
       }
-      
+
       const newQuantity = item.quantity - 1;
-      
+
       // Оптимистично обновляем UI
-      setCartItems(prev => prev.map(cartItem => 
-        cartItem.sneaker_id === sneakerId 
-          ? { ...cartItem, quantity: newQuantity } 
+      setCartItems(prev => prev.map(cartItem =>
+        cartItem.sneaker_id === sneakerId
+          ? { ...cartItem, quantity: newQuantity }
           : cartItem
       ));
-      
-      logger.info('Отправляем запрос на уменьшение количества', { 
+
+      logger.info('Отправляем запрос на уменьшение количества', {
         itemId: item.id,
-        newQuantity 
+        newQuantity
       });
-      
-      const response = await axios.put(`/api/v1/cart/${item.id}`, { 
-        sneaker_id: sneakerId, 
-        quantity: newQuantity 
+
+      const response = await axios.put(`/api/v1/cart/${item.id}`, {
+        sneaker_id: sneakerId,
+        quantity: newQuantity
       });
-      
+
       logger.info('Уменьшено количество товара в корзине', { sneakerId, quantity: newQuantity });
     } catch (err) {
       logger.error('Ошибка при уменьшении количества товара', err);
       setError(err.response?.data?.error || 'Не удалось уменьшить количество товара');
-      
+
       // Обновляем корзину с сервера в случае ошибки
       await fetchCart();
     } finally {
@@ -263,7 +263,7 @@ export const CartProvider = ({ children }) => {
     if (!Array.isArray(cartItems) || !Array.isArray(items)) {
       return 0;
     }
-    
+
     return cartItems.reduce((sum, cartItem) => {
       const product = items.find(item => item.id === cartItem.sneaker_id);
       return sum + (product ? product.price * cartItem.quantity : 0);

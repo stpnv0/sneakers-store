@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { Route, Routes } from "react-router-dom";
-import {Header} from './components/Header'
-import {Drawer} from './components/Drawer'
+import { Header } from './components/Header'
+import { Drawer } from './components/Drawer'
 import Home from './pages/Home'
 import { Favourites } from './pages/Favourites'
+import Orders from './pages/Orders'
 import Login from './pages/Login'
 import { FavoritesProvider } from './context/FavoritesContext'
 import { CartProvider } from './context/CartContext'
@@ -14,7 +15,7 @@ export const App = () => {
   const [cartOpened, setCartOpened] = useState(false);
 
   const onChangeSearchInput = (event) => {
-    setSearchValue(event.target.value); 
+    setSearchValue(event.target.value);
   }
 
   return (
@@ -25,22 +26,25 @@ export const App = () => {
             {cartOpened && (
               <Drawer onClose={() => setCartOpened(false)} />
             )}
-            <Header onClickCart={() => setCartOpened(true)}/>
+            <Header onClickCart={() => setCartOpened(true)} />
             <Routes>
-              <Route path="/" 
+              <Route path="/"
                 element={
                   <Home
-                    searchValue={searchValue} 
-                    setSearchValue={setSearchValue} 
+                    searchValue={searchValue}
+                    setSearchValue={setSearchValue}
                     onChangeSearchInput={onChangeSearchInput}
                   />
-                }            
+                }
               />
-              <Route path='/favourites' 
+              <Route path='/favourites'
                 element={<Favourites />}
               />
-              <Route path="/login" 
-                element={<Login />} 
+              <Route path='/orders'
+                element={<Orders />}
+              />
+              <Route path="/login"
+                element={<Login />}
               />
             </Routes>
           </div>

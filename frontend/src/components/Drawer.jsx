@@ -1,26 +1,30 @@
-import React, { useContext } from 'react';
+import React, { useContext, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { CartContext } from '../context/CartContext';
 import { ItemsContext } from '../context/ItemsContext';
+import axios from '../api/axios';
 
 // Базовый URL для изображений.
 const S3_BASE_URL = 'http://localhost:9000/sneakers';
 
 export const Drawer = ({ onClose }) => {
-  const { 
-    cartItems, 
-    removeFromCart, 
-    decreaseQuantity, 
-    increaseQuantity, 
-    getTotalPrice, 
+  const {
+    cartItems,
+    removeFromCart,
+    decreaseQuantity,
+    increaseQuantity,
+    getTotalPrice,
     getTaxAmount,
     isLoading
   } = useContext(CartContext);
-  
+
   const { items: allItemsData } = useContext(ItemsContext);
+  const navigate = useNavigate();
+  const [isCreatingOrder, setIsCreatingOrder] = useState(false);
 
   const handleCartAction = async (action, sneakerId) => {
     console.log(`Выполняем действие ${action} для товара с ID=${sneakerId}`);
-    
+
     try {
       switch (action) {
         case 'increase':
@@ -42,6 +46,52 @@ export const Drawer = ({ onClose }) => {
       console.log(`Действие ${action} выполнено успешно`);
     } catch (error) {
       console.error(`Ошибка при выполнении действия ${action}:`, error);
+    }
+  };
+
+  const handleCheckout = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert('Необходимо авторизоваться для оформления заказа');
+      navigate('/login');
+      return;
+    }
+
+    if (cartItems.length === 0) {
+      alert('Корзина пуста');
+      return;
+    }
+
+    setIsCreatingOrder(true);
+
+    try {
+      // Подготовка данных заказа
+      const orderItems = cartItems.map(item => ({
+        sneaker_id: item.sneaker_id,
+        quantity: item.quantity
+      }));
+
+      // Создание заказа
+      const response = await axios.post('/api/v1/orders', { items: orderItems });
+
+      console.log('Заказ создан:', response.data);
+
+      // Успешно создан заказ
+      alert(`Заказ #${response.data.order_id} успешно создан!`);
+
+      // Закрыть корзину и перейти на страницу заказов
+      onClose();
+      navigate('/orders');
+    } catch (error) {
+      console.error('Ошибка при создании заказа:', error);
+      if (error.response?.status === 401) {
+        alert('Необходимо авторизоваться');
+        navigate('/login');
+      } else {
+        alert('Ошибка при создании заказа: ' + (error.response?.data?.error || error.message));
+      }
+    } finally {
+      setIsCreatingOrder(false);
     }
   };
 
@@ -69,16 +119,16 @@ export const Drawer = ({ onClose }) => {
                 const imageUrl = productDetails.image_key
                   ? `${S3_BASE_URL}/${productDetails.image_key}`
                   : "/img/sneakersPlaceholder.jpg";
-                
+
                 return (
                   <div key={cartItem.id} className="cartItem">
-                    <img 
-                      className="cartItemImg" 
+                    <img
+                      className="cartItemImg"
                       src={imageUrl}
-                      alt={productDetails.title} 
+                      alt={productDetails.title}
                     />
                     <div className="description">
-                      <p>{productDetails.title}</p> 
+                      <p>{productDetails.title}</p>
                       <b>{productDetails.price} руб.</b>
                       <div className="cartItemQuantity">
                         <div className="quantityControl">
@@ -100,7 +150,13 @@ export const Drawer = ({ onClose }) => {
                 <li><span>Итого:</span><div></div><b>{getTotalPrice()} руб.</b></li>
                 <li><span>Налог 5%:</span><div></div><b>{getTaxAmount()} руб.</b></li>
               </ul>
-              <button className="greenBtn" disabled={isLoading}>Оформить заказ</button>
+              <button
+                className="greenBtn"
+                onClick={handleCheckout}
+                disabled={isLoading || isCreatingOrder}
+              >
+                {isCreatingOrder ? 'Создание...' : 'Оформить заказ'}
+              </button>
             </div>
           </>
         ) : (
