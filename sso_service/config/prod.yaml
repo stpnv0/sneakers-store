@@ -1,6 +1,11 @@
 env: "prod"
-storage_path: "/root/storage/sso.db"
 token_ttl: 24h
+db:
+  host: "sso_postgres"
+  port: 5432
+  user: "sso_user"
+  password: "sso_password"
+  dbname: "sso_db"
 grpc:
   port: 44044
   timeout: 5s

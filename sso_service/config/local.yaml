@@ -1,6 +1,11 @@
-env: "local" #prod
-storage_path: "./storage/sso.db"
-token_ttl: 1h #срок действия токена
+env: "local"
+token_ttl: 1h
+db:
+  host: "localhost"
+  port: 5432
+  user: "sso_user"
+  password: "sso_password"
+  dbname: "sso_db"
 grpc:
   port: 44044
   timeout: 5s

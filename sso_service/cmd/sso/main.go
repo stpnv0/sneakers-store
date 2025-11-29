@@ -23,7 +23,16 @@ func main() {
 
 	log.Info("starting sso server", slog.Any("config", cfg))
 
-	application := app.New(log, cfg.GRPC.Port, cfg.StoragePath, cfg.TokenTTL)
+	application := app.New(
+		log,
+		cfg.GRPC.Port,
+		cfg.DB.Host,
+		cfg.DB.Port,
+		cfg.DB.User,
+		cfg.DB.Password,
+		cfg.DB.DBName,
+		cfg.TokenTTL,
+	)
 
 	go application.GRPCServer.MustRun() //в горутине потому что дальше мы будем слушать сигналы из опепрационных систем
 
