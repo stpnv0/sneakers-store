@@ -3,12 +3,10 @@ package main
 import (
 	"context"
 	"fav_service/internal/config"
-	"fav_service/internal/handlers"
+	grpcapp "fav_service/internal/grpc"
 	"fav_service/internal/repository"
-	"fav_service/internal/router"
 	"fav_service/internal/services"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -59,29 +57,10 @@ func main() {
 		24*time.Hour, // TTL для кэша - 24 часа
 	)
 
-	// Инициализация обработчиков HTTP с адаптацией интерфейса
-	favHandler := handlers.NewFavHandler(favService)
+	// Инициализация gRPC сервера
+	grpcApp := grpcapp.New(slogger, favService, cfg.GRPC.Port)
 
-	// Инициализация и настройка роутера
-	r := router.InitRouter(favHandler)
-
-	// Запуск HTTP-сервера
-	server := &http.Server{
-		Addr:         cfg.HTTPServer.Address,
-		Handler:      r,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-		IdleTimeout:  60 * time.Second,
-	}
-
-	// Запускаем сервер в горутине
-	go func() {
-		slogger.Info("Starting favourites service", "address", cfg.HTTPServer.Address)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slogger.Error("Failed to start server", "error", err)
-			os.Exit(1)
-		}
-	}()
+	go grpcApp.MustRun()
 
 	// Настраиваем грациозное завершение
 	quit := make(chan os.Signal, 1)
@@ -89,15 +68,8 @@ func main() {
 
 	// Блокируемся пока не получим сигнал
 	<-quit
-	slogger.Info("Shutting down server...")
+	slogger.Info("Shutting down favourites service...")
 
-	// Создаем контекст с таймаутом для грациозного завершения
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(ctx); err != nil {
-		slogger.Error("Server forced to shutdown", "error", err)
-	}
-
-	slogger.Info("Server exiting")
+	grpcApp.Stop()
+	slogger.Info("Favourites service stopped")
 }

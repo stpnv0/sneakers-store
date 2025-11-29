@@ -9,10 +9,14 @@ import (
 )
 
 type Config struct {
-	Env        string         `yaml:"env"`
-	HTTPServer HTTPServer     `yaml:"http_server"`
-	Redis      RedisConfig    `yaml:"redis"`
-	Postgres   PostgresConfig `yaml:"postgres"`
+	Env      string         `yaml:"env"`
+	GRPC     GRPCConfig     `yaml:"grpc"`
+	Redis    RedisConfig    `yaml:"redis"`
+	Postgres PostgresConfig `yaml:"postgres"`
+}
+
+type GRPCConfig struct {
+	Port int `yaml:"port"`
 }
 
 type HTTPServer struct {

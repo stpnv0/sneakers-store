@@ -1,0 +1,76 @@
+//protoc -I proto proto/cart/cart.proto --go_out=./gen/go --go_opt=paths=source_relative --go-grpc_out=./gen/go --go-grpc_opt=paths=source_relative
+syntax = "proto3";
+
+package cart;
+
+option go_package = "stpnv.cart.v1;cartv1";
+
+service CartService {
+    rpc AddToCart(AddToCartRequest) returns (AddToCartResponse);
+    rpc GetCart(GetCartRequest) returns (GetCartResponse);
+    rpc UpdateCartItemQuantity(UpdateQuantityRequest) returns (UpdateQuantityResponse);
+    rpc RemoveFromCart(RemoveFromCartRequest) returns (RemoveFromCartResponse);
+    rpc ClearCart(ClearCartRequest) returns (ClearCartResponse);
+}
+
+message CartItem {
+    string id = 1;
+    int32 sneaker_id = 2;
+    int32 quantity = 3;
+    int64 added_at = 4;
+}
+
+message Cart {
+    int32 user_id = 1;
+    repeated CartItem items = 2;
+    int64 updated_at = 3;
+}
+
+message AddToCartRequest {
+    int32 user_id = 1;
+    int32 sneaker_id = 2;
+    int32 quantity = 3;
+}
+
+message AddToCartResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message GetCartRequest {
+    int32 user_id = 1;
+}
+
+message GetCartResponse {
+    Cart cart = 1;
+}
+
+message UpdateQuantityRequest {
+    int32 user_id = 1;
+    string item_id = 2;
+    int32 quantity = 3;
+}
+
+message UpdateQuantityResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message RemoveFromCartRequest {
+    int32 user_id = 1;
+    string item_id = 2;
+}
+
+message RemoveFromCartResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message ClearCartRequest {
+    int32 user_id = 1;
+}
+
+message ClearCartResponse {
+    bool success = 1;
+    string message = 2;
+}

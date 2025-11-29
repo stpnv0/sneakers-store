@@ -6,11 +6,11 @@ grpc:
 
 # Настройки Redis
 redis:
-  host: "cart_redis"  # Используем имя сервиса из docker-compose
+  host: "cart_redis"
   port: 6379
   password: ""
   db: 0
-  expiration: "168h"  # 7 дней
+  expiration: "168h"
 
 postgres:
   host: "cart_postgres"

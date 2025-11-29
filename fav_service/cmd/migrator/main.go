@@ -32,7 +32,7 @@ func main() {
 
 	m, err := migrate.New(
 		"file://"+migrationsPath,
-		"postgres://favourites_user:favourites_password@favourites_postgres:5432/favourites_db?sslmode=disable",
+		storagePath,
 	)
 	if err != nil {
 		panic(err)

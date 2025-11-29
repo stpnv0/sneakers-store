@@ -171,9 +171,3 @@ func (r *RedisRepository) RemoveFromCart(ctx context.Context, userSSOID int, ite
 	key := getCartKey(userSSOID)
 	return r.client.HDel(ctx, key, itemID).Err()
 }
-
-// TODO:
-// func (r *RedisRepository) MarkAsSynchronized(ctx context.Context, userSSOID int, itemID string) error
-
-//TODO:
-//func (r *RedisRepository) GetUnsynchronizedItems(ctx context.Context, userID int) ([]models.CartItem, error)

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"time"
 
+	"fav_service/internal/models"
+
 	_ "github.com/lib/pq"
 )
 
@@ -65,21 +67,21 @@ func (p *PostgresRepo) RemoveFromFavourite(ctx context.Context, userSSOID, sneak
 	return nil
 }
 
-func (p *PostgresRepo) GetAllFavourites(ctx context.Context, userSSOID int) ([]int, error) {
-	query := `SELECT sneaker_id FROM favourites_items WHERE user_sso_id = $1`
+func (p *PostgresRepo) GetAllFavourites(ctx context.Context, userSSOID int) ([]models.Favourite, error) {
+	query := `SELECT id, user_sso_id, sneaker_id, created_at FROM favourites_items WHERE user_sso_id = $1`
 	rows, err := p.db.QueryContext(ctx, query, userSSOID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get favourites: %w", err)
 	}
 	defer rows.Close()
 
-	var favourites []int
+	var favourites []models.Favourite
 	for rows.Next() {
-		var sneakerID int
-		if err := rows.Scan(&sneakerID); err != nil {
+		var item models.Favourite
+		if err := rows.Scan(&item.ID, &item.UserSSOID, &item.SneakerID, &item.AddedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan favourite: %w", err)
 		}
-		favourites = append(favourites, sneakerID)
+		favourites = append(favourites, item)
 	}
 
 	if err := rows.Err(); err != nil {

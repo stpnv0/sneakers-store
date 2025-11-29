@@ -9,17 +9,15 @@ import (
 )
 
 type Config struct {
-	Env        string         `yaml:"env"`
-	HTTPServer HTTPServer     `yaml:"http_server"`
-	Postgres   PostgresConfig `yaml:"postgres"`
-	Redis      RedisConfig    `yaml:"redis"`
+	Env      string         `yaml:"env"`
+	GRPC     GRPCConfig     `yaml:"grpc"`
+	Postgres PostgresConfig `yaml:"postgres"`
+	Redis    RedisConfig    `yaml:"redis"`
 }
 
-type HTTPServer struct {
-	Address     string   `yaml:"address"`
-	Timeout     string   `yaml:"timeout"`
-	IdleTimeout string   `yaml:"idle_timeout"`
-	CorsAllowed []string `yaml:"cors_allowed"`
+type GRPCConfig struct {
+	Port    int    `yaml:"port"`
+	Timeout string `yaml:"timeout"`
 }
 
 type PostgresConfig struct {

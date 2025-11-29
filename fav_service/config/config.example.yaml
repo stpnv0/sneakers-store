@@ -7,11 +7,11 @@ grpc:
 
 # Настройки Redis
 redis:
-  host: "favourites_redis"  # Используем имя сервиса из docker-compose
+  host: "favourites_redis"
   port: 6379
   password: ""
   db: 0
-  expiration: "168h"  # 7 дней
+  expiration: "168h"
 
 postgres:
   host: "favourites_postgres"

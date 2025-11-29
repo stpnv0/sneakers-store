@@ -7,19 +7,21 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"fav_service/internal/models"
 )
 
 type FavouritesRepo interface {
-	GetAllFavourites(ctx context.Context, userSSOID int) ([]int, error)
+	GetAllFavourites(ctx context.Context, userSSOID int) ([]models.Favourite, error)
 	AddToFavourite(ctx context.Context, userSSOID, sneakerID int) error
 	RemoveFromFavourite(ctx context.Context, userSSOID, sneakerID int) error
 	IsFavourite(ctx context.Context, userSSOID, sneakerID int) (bool, error)
 }
 
 type CacheRepo interface {
-	GetAllFavourites(ctx context.Context, userSSOID int) ([]int, error)
+	GetAllFavourites(ctx context.Context, userSSOID int) ([]models.Favourite, error)
 	InvalidateFavourites(ctx context.Context, userSSOID int) error
-	SetFavourites(ctx context.Context, userSSOID int, sneakerIDs []int, ttl time.Duration) error
+	SetFavourites(ctx context.Context, userSSOID int, favourites []models.Favourite, ttl time.Duration) error
 }
 
 type FavService struct {
@@ -36,7 +38,7 @@ func NewFavService(repo FavouritesRepo, cache CacheRepo, ttl time.Duration) *Fav
 	}
 }
 
-func (s *FavService) GetAllFavourites(ctx context.Context, userSSOID int) ([]int, error) {
+func (s *FavService) GetAllFavourites(ctx context.Context, userSSOID int) ([]models.Favourite, error) {
 	// Пытаемся получить данные из кэша
 	favourites, err := s.cache.GetAllFavourites(ctx, userSSOID)
 	if err == nil && len(favourites) > 0 {

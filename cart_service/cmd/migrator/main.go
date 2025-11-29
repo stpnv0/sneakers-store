@@ -32,7 +32,7 @@ func main() {
 
 	m, err := migrate.New(
 		"file://"+migrationsPath,
-		"postgres://cart_user:cart_password@cart_postgres:5432/cart_db?sslmode=disable",
+		storagePath,
 	)
 	if err != nil {
 		panic(err)

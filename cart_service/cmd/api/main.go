@@ -2,13 +2,11 @@ package main
 
 import (
 	"cart_service/internal/config"
-	"cart_service/internal/handlers"
+	grpcapp "cart_service/internal/grpc"
 	"cart_service/internal/repository"
-	"cart_service/internal/router"
 	"cart_service/internal/services"
 	"context"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
@@ -42,10 +40,19 @@ func main() {
 		24*time.Hour,
 	)
 
-	cartHandler := handlers.NewCartHandler(cartService, log)
+	// Initialize gRPC server
+	grpcApp := grpcapp.New(log, cartService, cfg.GRPC.Port)
 
-	r := router.InitRouter(cartHandler)
-	runServer(r, cfg, log)
+	go grpcApp.MustRun()
+
+	// Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	log.Info("shutting down cart service...")
+	grpcApp.Stop()
+	log.Info("cart service stopped")
 }
 
 func mustInitRedis(cfg *config.Config, log *slog.Logger) *redis.Client {
@@ -61,34 +68,4 @@ func mustInitRedis(cfg *config.Config, log *slog.Logger) *redis.Client {
 	}
 	log.Info("successfully connected to Redis", slog.String("addr", addr))
 	return client
-}
-
-func runServer(handler http.Handler, cfg *config.Config, log *slog.Logger) {
-	server := &http.Server{
-		Addr:         cfg.HTTPServer.Address,
-		Handler:      handler,
-		ReadTimeout:  10 * time.Second,
-		WriteTimeout: 10 * time.Second,
-	}
-
-	go func() {
-		log.Info("starting cart service", slog.String("address", cfg.HTTPServer.Address))
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Error("server failed to start", slog.String("error", err.Error()))
-			os.Exit(1)
-		}
-	}()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-	log.Info("shutting down server...")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(ctx); err != nil {
-		log.Error("server forced to shutdown", slog.String("error", err.Error()))
-	}
-	log.Info("server exiting")
 }

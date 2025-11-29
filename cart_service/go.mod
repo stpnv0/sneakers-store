@@ -1,15 +1,17 @@
 module cart_service
 
-go 1.23.0
+go 1.24.6
 
-toolchain go1.23.8
+replace github.com/stpnv0/protos => ../protos
 
 require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-redis/redis/v8 v8.11.5
-	github.com/golang-migrate/migrate v3.5.4+incompatible
 	github.com/golang-migrate/migrate/v4 v4.18.3
+	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/lib/pq v1.10.9
+	github.com/stpnv0/protos v0.0.0-00010101000000-000000000000
+	google.golang.org/grpc v1.70.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -43,5 +45,6 @@ require (
 	golang.org/x/net v0.38.0 // indirect
 	golang.org/x/sys v0.31.0 // indirect
 	golang.org/x/text v0.23.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20241202173237-19429a94021a // indirect
 	google.golang.org/protobuf v1.36.0 // indirect
 )

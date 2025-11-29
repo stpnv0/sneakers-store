@@ -1,0 +1,65 @@
+syntax = "proto3";
+
+package favourites;
+
+option go_package = "stpnv.favourites.v1;favouritesv1";
+
+service FavouritesService {
+    rpc AddToFavourites(AddToFavouritesRequest) returns (AddToFavouritesResponse);
+    rpc RemoveFromFavourites(RemoveFromFavouritesRequest) returns (RemoveFromFavouritesResponse);
+    rpc GetFavourites(GetFavouritesRequest) returns (GetFavouritesResponse);
+    rpc IsFavourite(IsFavouriteRequest) returns (IsFavouriteResponse);
+    rpc GetFavouritesByIDs(GetFavouritesByIDsRequest) returns (GetFavouritesByIDsResponse);
+}
+
+message FavouriteItem {
+    int32 id = 1;
+    int32 user_id = 2;
+    int32 sneaker_id = 3;
+    int64 added_at = 4;
+}
+
+message AddToFavouritesRequest {
+    int32 user_id = 1;
+    int32 sneaker_id = 2;
+}
+
+message AddToFavouritesResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message RemoveFromFavouritesRequest {
+    int32 user_id = 1;
+    int32 sneaker_id = 2;
+}
+
+message RemoveFromFavouritesResponse {
+    bool success = 1;
+    string message = 2;
+}
+
+message GetFavouritesRequest {
+    int32 user_id = 1;
+}
+
+message GetFavouritesResponse {
+    repeated FavouriteItem items = 1;
+}
+
+message IsFavouriteRequest {
+    int32 user_id = 1;
+    int32 sneaker_id = 2;
+}
+
+message IsFavouriteResponse {
+    bool is_favourite = 1;
+}
+
+message GetFavouritesByIDsRequest {
+    repeated int32 ids = 1;
+}
+
+message GetFavouritesByIDsResponse {
+    repeated FavouriteItem items = 1;
+}

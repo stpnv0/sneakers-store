@@ -6,6 +6,8 @@ import (
 	"strconv"
 	"time"
 
+	"fav_service/internal/models"
+
 	"github.com/go-redis/redis/v8"
 )
 
@@ -23,17 +25,17 @@ func getKey(userSSOID int) string {
 	return fmt.Sprintf("fav:%d", userSSOID)
 }
 
-func (r *redisRepo) SetFavourites(ctx context.Context, userSSOID int, sneakerIDs []int, ttl time.Duration) error {
+func (r *redisRepo) SetFavourites(ctx context.Context, userSSOID int, favourites []models.Favourite, ttl time.Duration) error {
 	key := getKey(userSSOID)
 
 	pipe := r.client.Pipeline()
 
 	pipe.Del(ctx, key)
 
-	if len(sneakerIDs) > 0 {
-		interfaceIDs := make([]interface{}, len(sneakerIDs))
-		for i, id := range sneakerIDs {
-			interfaceIDs[i] = id
+	if len(favourites) > 0 {
+		interfaceIDs := make([]interface{}, len(favourites))
+		for i, item := range favourites {
+			interfaceIDs[i] = item.SneakerID
 		}
 		pipe.SAdd(ctx, key, interfaceIDs...)
 	}
@@ -49,7 +51,7 @@ func (r *redisRepo) SetFavourites(ctx context.Context, userSSOID int, sneakerIDs
 		return fmt.Errorf("failed to set cache: %w", err)
 	}
 
-	fmt.Printf("INFO: Cache set for key %s with %d items\n", key, len(sneakerIDs))
+	fmt.Printf("INFO: Cache set for key %s with %d items\n", key, len(favourites))
 	return nil
 }
 
@@ -58,7 +60,7 @@ func (r *redisRepo) InvalidateFavourites(ctx context.Context, userSSOID int) err
 
 	return r.client.Del(ctx, key).Err()
 }
-func (r *redisRepo) GetAllFavourites(ctx context.Context, userSSOID int) ([]int, error) {
+func (r *redisRepo) GetAllFavourites(ctx context.Context, userSSOID int) ([]models.Favourite, error) {
 	key := getKey(userSSOID)
 
 	result, err := r.client.SMembers(ctx, key).Result()
@@ -69,10 +71,15 @@ func (r *redisRepo) GetAllFavourites(ctx context.Context, userSSOID int) ([]int,
 
 	fmt.Printf("INFO: Cache retrieved for key %s with %d items\n", key, len(result))
 
-	sneakerIDs := make([]int, len(result))
+	favourites := make([]models.Favourite, len(result))
 	for i, idStr := range result {
-		sneakerIDs[i], _ = strconv.Atoi(idStr)
+		sneakerID, _ := strconv.Atoi(idStr)
+		favourites[i] = models.Favourite{
+			SneakerID: sneakerID,
+			UserSSOID: userSSOID,
+			// ID and AddedAt are missing in cache, will be zero values
+		}
 	}
 
-	return sneakerIDs, nil
+	return favourites, nil
 }
