@@ -1,0 +1,23 @@
+env: "local"
+
+http:
+  port: 8084
+  timeout: 10s
+
+postgres:
+  host: "payment_postgres"
+  port: 5432
+  user: "payment_user"
+  password: "payment_password"
+  dbname: "payment_db"
+  sslmode: "disable"
+
+kafka:
+  brokers:
+    - "kafka:9093"
+  topic: "orders"
+
+yookassa:
+  shop_id: "YOUR_SHOP_ID"
+  secret_key: "YOUR_SECRET_KEY"
+  return_url: "http://localhost:5173/payment/success"
