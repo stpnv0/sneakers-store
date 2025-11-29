@@ -1,0 +1,18 @@
+env: "local"
+
+grpc:
+  port: 44048
+  timeout: 10s
+
+postgres:
+  host: "order_postgres"
+  port: 5432
+  user: "order_user"
+  password: "order_password"
+  dbname: "order_db"
+  sslmode: "disable"
+
+kafka:
+  brokers:
+    - "kafka:9093"
+  topic: "orders"
