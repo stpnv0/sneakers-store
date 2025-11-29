@@ -1,6 +1,9 @@
 package main
 
 import (
+	"api_gateway/internal/client/cart"
+	"api_gateway/internal/client/favourites"
+	"api_gateway/internal/client/order"
 	"api_gateway/internal/client/product"
 	"api_gateway/internal/client/sso"
 	"api_gateway/internal/config"
@@ -32,11 +35,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	r := router.New(cfg, log, productClient, ssoClient)
+	cartClient, err := cart.New(context.Background(), log, cfg.Downstream.CartgRPC, 2*time.Second, 3)
+	if err != nil {
+		log.Error("failed to connect to cart service", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
 
-	log.Info("api_gateway is starting on %s", cfg.ListenAddr)
+	favClient, err := favourites.New(context.Background(), log, cfg.Downstream.FavouritesgRPC, 2*time.Second, 3)
+	if err != nil {
+		log.Error("failed to connect to favourites service", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	orderClient, err := order.New(context.Background(), log, cfg.Downstream.OrdergRPC, 2*time.Second, 3)
+	if err != nil {
+		log.Error("failed to connect to order service", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+
+	r := router.New(cfg, log, productClient, ssoClient, cartClient, favClient, orderClient)
+
+	log.Info("api_gateway is starting on", cfg.ListenAddr)
 	if err := r.Run(cfg.ListenAddr); err != nil {
-		log.Error("Failed to start server: %v", slog.String("error", err.Error()))
+		log.Error("Failed to start server", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
 }

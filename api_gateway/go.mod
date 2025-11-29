@@ -1,10 +1,11 @@
 module api_gateway
 
-go 1.23.11
+go 1.24.6
 
 require (
 	github.com/gin-gonic/gin v1.10.1
 	github.com/golang-jwt/jwt/v5 v5.2.3
+	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.2
 	github.com/spf13/viper v1.20.1
 	github.com/stpnv0/protos v0.0.3

@@ -1,8 +1,8 @@
 listen: ":8083"
-app_secret: "mysecret"
 downstream:
-  cart: "http://sneakers_cart:8081"
-  favourites: "http://sneakers_favourites:8082"
+  cart_grpc: "sneakers_cart:44046"
+  favourites_grpc: "sneakers_favourites:44047"
   backend: "http://sneakers_backend:8080"
   product_grpc: "product_service:44045"
   sso_grpc: "sneakers_sso:44044"
+  order_grpc: "sneakers_order:44048"
