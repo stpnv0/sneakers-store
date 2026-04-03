@@ -17,15 +17,15 @@ service Product {
 }
 
 message Sneaker {
-    int64  id        = 1;
-    string title     = 2;
-    float  price     = 3;
-    string image_key = 4; 
+    int64  id            = 1;
+    string title         = 2;
+    int64  price_kopecks = 3;
+    string image_key     = 4;
 }
 
 message AddSneakerRequest {
-    string title     = 1;
-    float  price     = 2;
+    string title         = 1;
+    int64  price_kopecks = 2;
 }
 
 message GenerateUploadURLRequest {

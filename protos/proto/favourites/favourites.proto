@@ -13,15 +13,15 @@ service FavouritesService {
 }
 
 message FavouriteItem {
-    int32 id = 1;
-    int32 user_id = 2;
-    int32 sneaker_id = 3;
+    int64 id = 1;
+    int64 user_id = 2;
+    int64 sneaker_id = 3;
     int64 added_at = 4;
 }
 
 message AddToFavouritesRequest {
-    int32 user_id = 1;
-    int32 sneaker_id = 2;
+    int64 user_id = 1;
+    int64 sneaker_id = 2;
 }
 
 message AddToFavouritesResponse {
@@ -30,8 +30,8 @@ message AddToFavouritesResponse {
 }
 
 message RemoveFromFavouritesRequest {
-    int32 user_id = 1;
-    int32 sneaker_id = 2;
+    int64 user_id = 1;
+    int64 sneaker_id = 2;
 }
 
 message RemoveFromFavouritesResponse {
@@ -40,7 +40,7 @@ message RemoveFromFavouritesResponse {
 }
 
 message GetFavouritesRequest {
-    int32 user_id = 1;
+    int64 user_id = 1;
 }
 
 message GetFavouritesResponse {
@@ -48,8 +48,8 @@ message GetFavouritesResponse {
 }
 
 message IsFavouriteRequest {
-    int32 user_id = 1;
-    int32 sneaker_id = 2;
+    int64 user_id = 1;
+    int64 sneaker_id = 2;
 }
 
 message IsFavouriteResponse {
@@ -57,7 +57,7 @@ message IsFavouriteResponse {
 }
 
 message GetFavouritesByIDsRequest {
-    repeated int32 ids = 1;
+    repeated int64 ids = 1;
 }
 
 message GetFavouritesByIDsResponse {

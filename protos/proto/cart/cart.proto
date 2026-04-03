@@ -15,20 +15,20 @@ service CartService {
 
 message CartItem {
     string id = 1;
-    int32 sneaker_id = 2;
+    int64 sneaker_id = 2;
     int32 quantity = 3;
     int64 added_at = 4;
 }
 
 message Cart {
-    int32 user_id = 1;
+    int64 user_id = 1;
     repeated CartItem items = 2;
     int64 updated_at = 3;
 }
 
 message AddToCartRequest {
-    int32 user_id = 1;
-    int32 sneaker_id = 2;
+    int64 user_id = 1;
+    int64 sneaker_id = 2;
     int32 quantity = 3;
 }
 
@@ -38,7 +38,7 @@ message AddToCartResponse {
 }
 
 message GetCartRequest {
-    int32 user_id = 1;
+    int64 user_id = 1;
 }
 
 message GetCartResponse {
@@ -46,7 +46,7 @@ message GetCartResponse {
 }
 
 message UpdateQuantityRequest {
-    int32 user_id = 1;
+    int64 user_id = 1;
     string item_id = 2;
     int32 quantity = 3;
 }
@@ -57,7 +57,7 @@ message UpdateQuantityResponse {
 }
 
 message RemoveFromCartRequest {
-    int32 user_id = 1;
+    int64 user_id = 1;
     string item_id = 2;
 }
 
@@ -67,7 +67,7 @@ message RemoveFromCartResponse {
 }
 
 message ClearCartRequest {
-    int32 user_id = 1;
+    int64 user_id = 1;
 }
 
 message ClearCartResponse {

@@ -1,8 +1,6 @@
 module github.com/stpnv0/protos
 
-go 1.22
-
-toolchain go1.22.10
+go 1.24.6
 
 require (
 	google.golang.org/grpc v1.69.0
