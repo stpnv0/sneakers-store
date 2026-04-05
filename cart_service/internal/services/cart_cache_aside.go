@@ -56,7 +56,7 @@ func (s *CartCacheAsideService) GetCart(ctx context.Context, userSSOID int) (*mo
 }
 
 // AddItemToCart добавляет товар в корзину с обновлением БД и кэша
-func (s *CartCacheAsideService) AddItemToCart(ctx context.Context, userSSOID, sneakerID, quantity int) error {
+func (s *CartCacheAsideService) AddToCart(ctx context.Context, userSSOID, sneakerID, quantity int) error {
 	const op = "service.AddToCart"
 	log := s.logger.With(slog.String("op", op), slog.Int("user_id", userSSOID))
 
@@ -103,7 +103,7 @@ func (s *CartCacheAsideService) UpdateCartItemQuantity(ctx context.Context, user
 }
 
 // RemoveCartItem удаляет товар из корзины
-func (s *CartCacheAsideService) RemoveCartItem(ctx context.Context, userSSOID int, itemID string) error {
+func (s *CartCacheAsideService) RemoveFromCart(ctx context.Context, userSSOID int, itemID string) error {
 	const op = "service.RemoveFromCart"
 	log := s.logger.With(slog.String("op", op), slog.Int("user_id", userSSOID))
 

@@ -61,6 +61,7 @@ func run() error {
 	defer db.Close()
 	log.Info("connected to postgres")
 
+	// Связывание зависимостей
 	redisRepo := repository.NewRedisRepository(redisClient)
 	pgRepo := repository.NewPostgresRepository(db)
 
