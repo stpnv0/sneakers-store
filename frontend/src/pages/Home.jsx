@@ -2,7 +2,7 @@ import { useContext } from 'react';
 import { Card } from '../components/Card/Card';
 import { ItemsContext } from '../context/ItemsContext';
 
-const S3_BASE_URL = 'http://localhost:9000/sneakers';
+const S3_BASE_URL = 'http://localhost:9000/products';
 
 const Home = ({ searchValue, onChangeSearchInput }) => {
   const { items, loading, error } = useContext(ItemsContext);
@@ -31,7 +31,7 @@ const Home = ({ searchValue, onChangeSearchInput }) => {
             key={item.id}
             id={item.id}
             title={item.title}
-            price={item.price}
+            price={Math.round(item.price_kopecks / 100)}
             imgUrl={fullImageUrl}
             description={item.description} 
           />

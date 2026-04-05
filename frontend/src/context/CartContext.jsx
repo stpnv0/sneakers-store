@@ -266,7 +266,7 @@ export const CartProvider = ({ children }) => {
 
     return cartItems.reduce((sum, cartItem) => {
       const product = items.find(item => item.id === cartItem.sneaker_id);
-      return sum + (product ? product.price * cartItem.quantity : 0);
+      return sum + (product ? Math.round(product.price_kopecks / 100) * cartItem.quantity : 0);
     }, 0);
   };
 
@@ -293,7 +293,8 @@ export const CartProvider = ({ children }) => {
       increaseQuantity,
       decreaseQuantity,
       getTotalPrice,
-      getTaxAmount
+      getTaxAmount,
+      refreshCart: fetchCart
     }}>
       {children}
     </CartContext.Provider>

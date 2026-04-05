@@ -5,7 +5,7 @@ import { ItemsContext } from '../context/ItemsContext';
 import axios from '../api/axios';
 
 // Базовый URL для изображений.
-const S3_BASE_URL = 'http://localhost:9000/sneakers';
+const S3_BASE_URL = 'http://localhost:9000/products';
 
 export const Drawer = ({ onClose }) => {
   const {
@@ -15,7 +15,8 @@ export const Drawer = ({ onClose }) => {
     increaseQuantity,
     getTotalPrice,
     getTaxAmount,
-    isLoading
+    isLoading,
+    refreshCart
   } = useContext(CartContext);
 
   const { items: allItemsData } = useContext(ItemsContext);
@@ -76,7 +77,9 @@ export const Drawer = ({ onClose }) => {
 
       console.log('Заказ создан:', response.data);
 
-      // Успешно создан заказ
+      // Успешно создан заказ — обновляем корзину (бэкенд её уже очистил)
+      await refreshCart();
+
       alert(`Заказ #${response.data.order_id} успешно создан!`);
 
       // Закрыть корзину и перейти на страницу заказов
@@ -129,7 +132,7 @@ export const Drawer = ({ onClose }) => {
                     />
                     <div className="description">
                       <p>{productDetails.title}</p>
-                      <b>{productDetails.price} руб.</b>
+                      <b>{Math.round(productDetails.price_kopecks / 100)} руб.</b>
                       <div className="cartItemQuantity">
                         <div className="quantityControl">
                           <button onClick={() => decreaseQuantity(cartItem.sneaker_id)}>-</button>

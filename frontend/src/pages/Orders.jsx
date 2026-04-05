@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import axios from '../api/axios';
 import styles from './Orders.module.scss';
 
-const S3_BASE_URL = 'http://localhost:9000/sneakers';
+const S3_BASE_URL = 'http://localhost:9000/products';
 
 const Orders = () => {
     const [orders, setOrders] = useState([]);
@@ -22,12 +22,12 @@ const Orders = () => {
                     return;
                 }
 
-                // Fetch orders
+                // Загружаем заказы
                 const ordersResponse = await axios.get('/api/v1/orders');
                 const ordersData = ordersResponse.data || [];
                 setOrders(ordersData);
 
-                // Collect all unique sneaker IDs
+                // Собираем все уникальные ID товаров
                 const sneakerIds = new Set();
                 ordersData.forEach(order => {
                     order.items?.forEach(item => {
@@ -35,7 +35,7 @@ const Orders = () => {
                     });
                 });
 
-                // Fetch product details
+                // Загружаем детали товаров
                 if (sneakerIds.size > 0) {
                     const idsParam = Array.from(sneakerIds).join(',');
                     const productsResponse = await axios.get(`/api/v1/products/batch?ids=${idsParam}`);
@@ -137,14 +137,14 @@ const Orders = () => {
                                                 </p>
                                                 <p className={styles.itemQuantity}>Количество: {item.quantity}</p>
                                             </div>
-                                            <p className={styles.itemPrice}>{item.price_at_purchase} ₽</p>
+                                            <p className={styles.itemPrice}>{Math.round(item.price_at_purchase_kopecks / 100)} ₽</p>
                                         </div>
                                     );
                                 })}
                             </div>
                             <div className={styles.orderTotal}>
                                 <strong>Итого: </strong>
-                                <span>{order.total_amount} ₽</span>
+                                <span>{Math.round(order.total_amount_kopecks / 100)} ₽</span>
                             </div>
                             {order.status === 'PENDING_PAYMENT' && order.payment_url && (
                                 <div

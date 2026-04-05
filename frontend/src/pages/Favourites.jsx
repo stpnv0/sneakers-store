@@ -4,7 +4,7 @@ import { FavoritesContext } from '../context/FavoritesContext';
 import styles from './Favourites.module.scss';
 
 // Базовый URL для изображений. Вынесите в константы или .env
-const S3_BASE_URL = 'http://localhost:9000/sneakers';
+const S3_BASE_URL = 'http://localhost:9000/products';
 
 export const Favourites = () => {
   // --- ГЛАВНОЕ ИЗМЕНЕНИЕ ---
