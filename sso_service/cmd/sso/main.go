@@ -7,7 +7,6 @@ import (
 	"os/signal"
 	"sso/internal/app"
 	"sso/internal/config"
-	"sso/internal/lib/logger/handlers/slogpretty"
 	"syscall"
 )
 
@@ -96,13 +95,5 @@ func setupLogger(env string) *slog.Logger {
 }
 
 func setupPrettySlog() *slog.Logger {
-	opts := slogpretty.PrettyHandlerOptions{
-		SlogOpts: &slog.HandlerOptions{
-			Level: slog.LevelDebug,
-		},
-	}
-
-	handler := opts.NewPrettyHandler(os.Stdout)
-
-	return slog.New(handler)
+	return slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
