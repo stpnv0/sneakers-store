@@ -14,7 +14,6 @@ services:
     networks:
       - sneakers_network
 
-  # Product Service Database
   product_postgres:
     image: postgres:15-alpine
     container_name: product_postgres
@@ -35,7 +34,6 @@ services:
     networks:
       - sneakers_network
 
-  # Product Service Redis
   product_redis:
     image: redis:alpine
     container_name: product_redis
@@ -52,7 +50,6 @@ services:
     networks:
       - sneakers_network
 
-  # MinIO for file storage
   minio:
     image: minio/minio:latest
     container_name: minio
@@ -74,7 +71,43 @@ services:
     networks:
       - sneakers_network
 
-  # Product Service
+  minio_init:
+    image: minio/mc
+    container_name: minio_init
+    entrypoint: >
+      /bin/sh -c "
+      until mc alias set local http://minio:9000 admin admin123; do
+        echo 'Waiting for MinIO...'; sleep 2;
+      done;
+      mc mb --ignore-existing local/products;
+      mc anonymous set download local/products;
+      mc cp /seed-images/*.jpg local/products/products/ ;
+      echo 'MinIO init complete';
+      "
+    volumes:
+      - ./seed-images:/seed-images:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - sneakers_network
+
+  product_migrations:
+    build:
+      context: .
+      dockerfile: ./product_service/Dockerfile
+    container_name: product_migrations
+    command: [ "/app/product_migrator" ]
+    environment:
+      - POSTGRES_DSN=postgres://product_user:product_password@product_postgres:5432/product_db?sslmode=disable
+    depends_on:
+      product_postgres:
+        condition: service_healthy
+    restart: on-failure
+    networks:
+      - sneakers_network
+
   product_service:
     build:
       context: .
@@ -87,6 +120,10 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      minio_init:
+        condition: service_completed_successfully
+      product_migrations:
+        condition: service_completed_successfully
     environment:
       - CONFIG_PATH=./config/docker.yaml
     restart: unless-stopped
@@ -134,7 +171,7 @@ services:
       context: .
       dockerfile: ./cart_service/Dockerfile
     container_name: cart_migrations
-    command: [ "/app/cart_migrator", "-migrations-path=/app/migrations", "-migrations-table=cart_migrations" ]
+    command: [ "/app/cart_migrator" ]
     environment:
       - POSTGRES_DSN=postgres://cart_user:cart_password@cart_postgres:5432/cart_db?sslmode=disable
     depends_on:
@@ -185,7 +222,7 @@ services:
       context: .
       dockerfile: fav_service/Dockerfile
     container_name: favourites_migrations
-    command: [ "/app/fav_migrator", "--migrations-path=/app/migrations", "--migrations-table=favourites_migrations" ]
+    command: [ "/app/fav_migrator" ]
     environment:
       - POSTGRES_DSN=postgres://favourites_user:favourites_password@favourites_postgres:5432/favourites_db?sslmode=disable
     depends_on:
@@ -195,7 +232,7 @@ services:
     networks:
       - sneakers_network
 
-  # Cart Service
+  # Сервис корзины
   cart_service:
     build:
       context: .
@@ -208,6 +245,8 @@ services:
         condition: service_healthy
       cart_redis:
         condition: service_healthy
+    environment:
+      - CONFIG_PATH=./config/config.yaml
     expose:
       - "44046" # gRPC port
     restart: unless-stopped
@@ -235,7 +274,6 @@ services:
     networks:
       - sneakers_network
 
-  # SSO Service Database
   sso_postgres:
     image: postgres:15-alpine
     container_name: sso_postgres
@@ -261,7 +299,7 @@ services:
       context: .
       dockerfile: sso_service/Dockerfile
     container_name: sso_migrations
-    command: ./sso_migrator -migrations-path=/root/migrations -migrations-table=sso_migrations
+    command: [ "/app/sso_migrator" ]
     environment:
       - POSTGRES_DSN=postgres://sso_user:sso_password@sso_postgres:5432/sso_db?sslmode=disable
     depends_on:
@@ -314,7 +352,7 @@ services:
     networks:
       - sneakers_network
 
-  # ZOOKEEPER
+  # Zookeeper
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: zookeeper
@@ -326,7 +364,6 @@ services:
     networks:
       - sneakers_network
 
-  # KAFKA
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: kafka
@@ -346,7 +383,6 @@ services:
     networks:
       - sneakers_network
 
-  # ORDER SERVICE DATABASE
   order_postgres:
     image: postgres:15-alpine
     container_name: order_postgres
@@ -367,7 +403,6 @@ services:
     networks:
       - sneakers_network
 
-  # ORDER SERVICE MIGRATIONS
   order_migrations:
     build:
       context: .
@@ -382,7 +417,6 @@ services:
     networks:
       - sneakers_network
 
-  # ORDER SERVICE
   order_service:
     build:
       context: .
@@ -397,63 +431,9 @@ services:
         condition: service_started
     environment:
       - CONFIG_PATH=./config/config.yaml
+      - ADMIN_API_KEY=${ADMIN_API_KEY:-}
     expose:
       - "44048"
-    restart: unless-stopped
-    networks:
-      - sneakers_network
-
-  # PAYMENT SERVICE DATABASE
-  payment_postgres:
-    image: postgres:15-alpine
-    container_name: payment_postgres
-    environment:
-      POSTGRES_USER: payment_user
-      POSTGRES_PASSWORD: payment_password
-      POSTGRES_DB: payment_db
-    ports:
-      - "5439:5432"
-    volumes:
-      - payment_postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U payment_user -d payment_db" ]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    restart: unless-stopped
-    networks:
-      - sneakers_network
-
-  # PAYMENT SERVICE MIGRATIONS
-  payment_migrations:
-    build:
-      context: .
-      dockerfile: payment_service/Dockerfile
-    container_name: payment_migrations
-    depends_on:
-      payment_postgres:
-        condition: service_healthy
-    environment:
-      - POSTGRES_DSN=postgres://payment_user:payment_password@payment_postgres:5432/payment_db?sslmode=disable
-    command: [ "/app/payment_migrator" ]
-    networks:
-      - sneakers_network
-
-  # PAYMENT SERVICE
-  payment_service:
-    build:
-      context: .
-      dockerfile: payment_service/Dockerfile
-    container_name: sneakers_payment
-    depends_on:
-      payment_postgres:
-        condition: service_healthy
-      payment_migrations:
-        condition: service_completed_successfully
-      kafka:
-        condition: service_started
-    environment:
-      - CONFIG_PATH=./config/config.yaml
     ports:
       - "8084:8084"
     restart: unless-stopped
@@ -476,4 +456,3 @@ volumes:
   order_postgres_data:
   zookeeper_data:
   kafka_data:
-  payment_postgres_data:
