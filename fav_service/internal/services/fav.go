@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +16,7 @@ type FavouritesRepo interface {
 	AddToFavourite(ctx context.Context, userSSOID, sneakerID int) error
 	RemoveFromFavourite(ctx context.Context, userSSOID, sneakerID int) error
 	IsFavourite(ctx context.Context, userSSOID, sneakerID int) (bool, error)
+	GetByIDs(ctx context.Context, ids []int) ([]models.Favourite, error)
 }
 
 type CacheRepo interface {
@@ -28,105 +29,72 @@ type FavService struct {
 	repo     FavouritesRepo
 	cache    CacheRepo
 	cacheTTL time.Duration
+	log      *slog.Logger
 }
 
-func NewFavService(repo FavouritesRepo, cache CacheRepo, ttl time.Duration) *FavService {
+func NewFavService(repo FavouritesRepo, cache CacheRepo, ttl time.Duration, log *slog.Logger) *FavService {
 	return &FavService{
 		repo:     repo,
 		cache:    cache,
 		cacheTTL: ttl,
+		log:      log,
 	}
 }
 
 func (s *FavService) GetAllFavourites(ctx context.Context, userSSOID int) ([]models.Favourite, error) {
-	// Пытаемся получить данные из кэша
+	const op = "service.GetAllFavourites"
+
 	favourites, err := s.cache.GetAllFavourites(ctx, userSSOID)
-	if err == nil && len(favourites) > 0 {
-		log.Printf("INFO: Cache hit for user %d", userSSOID)
+	if err == nil {
+		s.log.Debug("cache hit", slog.String("op", op), slog.Int("user_id", userSSOID))
 		return favourites, nil
 	}
 
-	log.Printf("INFO: Cache miss for user %d, loading from DB", userSSOID)
+	s.log.Debug("cache miss, loading from db", slog.String("op", op), slog.Int("user_id", userSSOID))
 
-	// Если данных нет в кэше, получаем их из базы данных
 	favourites, err = s.repo.GetAllFavourites(ctx, userSSOID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get favourites from DB: %w", err)
+		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	// Сохраняем данные в кэш
 	if err := s.cache.SetFavourites(ctx, userSSOID, favourites, s.cacheTTL); err != nil {
-		log.Printf("WARNING: Failed to cache favourites for user %d: %v", userSSOID, err)
-	} else {
-		log.Printf("INFO: Cache set for key fav:%d with %d items", userSSOID, len(favourites))
+		s.log.Warn("failed to cache favourites",
+			slog.String("op", op),
+			slog.Int("user_id", userSSOID),
+			slog.String("error", err.Error()),
+		)
 	}
 
 	return favourites, nil
 }
 
 func (s *FavService) AddToFavourite(ctx context.Context, userSSOID, sneakerID int) error {
-	// Проверяем, не добавлен ли уже товар в избранное
+	const op = "service.AddToFavourite"
+
 	exists, err := s.repo.IsFavourite(ctx, userSSOID, sneakerID)
 	if err != nil {
-		return fmt.Errorf("failed to check if favourite exists: %w", err)
+		return fmt.Errorf("%s: check exists: %w", op, err)
 	}
-
 	if exists {
-		return nil // Товар уже в избранном
+		return nil
 	}
 
-	// Добавляем товар в избранное
 	if err := s.repo.AddToFavourite(ctx, userSSOID, sneakerID); err != nil {
-		return fmt.Errorf("failed to add to favourites: %w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// Инвалидируем кэш
-	if err := s.cache.InvalidateFavourites(ctx, userSSOID); err != nil {
-		log.Printf("WARNING: Failed to invalidate cache for user %d: %v", userSSOID, err)
-	} else {
-		log.Printf("INFO: Cache invalidated for key fav:%d", userSSOID)
-	}
-
-	// Сразу обновляем кэш новыми данными
-	favourites, err := s.repo.GetAllFavourites(ctx, userSSOID)
-	if err != nil {
-		log.Printf("WARNING: Failed to get updated favourites for user %d: %v", userSSOID, err)
-	} else {
-		if err := s.cache.SetFavourites(ctx, userSSOID, favourites, s.cacheTTL); err != nil {
-			log.Printf("WARNING: Failed to update cache for user %d: %v", userSSOID, err)
-		} else {
-			log.Printf("INFO: Cache updated for key fav:%d with %d items", userSSOID, len(favourites))
-		}
-	}
-
+	s.refreshCache(ctx, op, userSSOID)
 	return nil
 }
 
 func (s *FavService) RemoveFromFavourite(ctx context.Context, userSSOID, sneakerID int) error {
-	// Удаляем товар из избранного
+	const op = "service.RemoveFromFavourite"
+
 	if err := s.repo.RemoveFromFavourite(ctx, userSSOID, sneakerID); err != nil {
-		return fmt.Errorf("failed to remove from favourites: %w", err)
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// Инвалидируем кэш
-	if err := s.cache.InvalidateFavourites(ctx, userSSOID); err != nil {
-		log.Printf("WARNING: Failed to invalidate cache for user %d: %v", userSSOID, err)
-	} else {
-		log.Printf("INFO: Cache invalidated for key fav:%d", userSSOID)
-	}
-
-	// Сразу обновляем кэш новыми данными
-	favourites, err := s.repo.GetAllFavourites(ctx, userSSOID)
-	if err != nil {
-		log.Printf("WARNING: Failed to get updated favourites for user %d: %v", userSSOID, err)
-	} else {
-		if err := s.cache.SetFavourites(ctx, userSSOID, favourites, s.cacheTTL); err != nil {
-			log.Printf("WARNING: Failed to update cache for user %d: %v", userSSOID, err)
-		} else {
-			log.Printf("INFO: Cache updated for key fav:%d with %d items", userSSOID, len(favourites))
-		}
-	}
-
+	s.refreshCache(ctx, op, userSSOID)
 	return nil
 }
 
@@ -134,32 +102,54 @@ func (s *FavService) IsFavourite(ctx context.Context, userSSOID, sneakerID int) 
 	return s.repo.IsFavourite(ctx, userSSOID, sneakerID)
 }
 
+func (s *FavService) GetByIDs(ctx context.Context, ids []int) ([]models.Favourite, error) {
+	return s.repo.GetByIDs(ctx, ids)
+}
+
 func (s *FavService) ParseIDsString(idsString string) ([]int, error) {
 	if idsString == "" {
 		return []int{}, nil
 	}
 
-	idStrings := strings.Split(idsString, ",")
+	parts := strings.Split(idsString, ",")
+	ids := make([]int, 0, len(parts))
 
-	// Создаем массив для результата
-	ids := make([]int, 0, len(idStrings))
-
-	// Преобразуем каждую строку в число
-	for _, idStr := range idStrings {
-		// Пропускаем пустые строки
-		if idStr == "" {
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
 			continue
 		}
-
-		// Преобразуем строку в число
-		id, err := strconv.Atoi(strings.TrimSpace(idStr))
+		id, err := strconv.Atoi(p)
 		if err != nil {
-			return nil, fmt.Errorf("invalid ID format: %w", err)
+			return nil, fmt.Errorf("invalid ID format %q: %w", p, err)
 		}
-
-		// Добавляем число в результат
 		ids = append(ids, id)
 	}
 
 	return ids, nil
+}
+
+func (s *FavService) refreshCache(ctx context.Context, op string, userSSOID int) {
+	if err := s.cache.InvalidateFavourites(ctx, userSSOID); err != nil {
+		s.log.Warn("failed to invalidate cache",
+			slog.String("op", op), slog.Int("user_id", userSSOID),
+			slog.String("error", err.Error()),
+		)
+	}
+
+	favourites, err := s.repo.GetAllFavourites(ctx, userSSOID)
+	if err != nil {
+		s.log.Warn("failed to reload favourites for cache",
+			slog.String("op", op), slog.Int("user_id", userSSOID),
+			slog.String("error", err.Error()),
+		)
+		return
+	}
+
+	if err := s.cache.SetFavourites(ctx, userSSOID, favourites, s.cacheTTL); err != nil {
+		s.log.Warn("failed to update cache",
+			slog.String("op", op), slog.Int("user_id", userSSOID),
+			slog.String("error", err.Error()),
+		)
+	}
 }

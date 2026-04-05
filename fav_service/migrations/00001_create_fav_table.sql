@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS favourites_items (
     id SERIAL PRIMARY KEY,
     user_sso_id INTEGER NOT NULL,
@@ -8,3 +9,5 @@ CREATE TABLE IF NOT EXISTS favourites_items (
 
 CREATE INDEX IF NOT EXISTS idx_favourites_user_sso_id ON favourites_items (user_sso_id);
 
+-- +goose Down
+DROP TABLE IF EXISTS favourites_items;

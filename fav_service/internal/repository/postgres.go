@@ -8,7 +8,7 @@ import (
 
 	"fav_service/internal/models"
 
-	_ "github.com/lib/pq"
+	"github.com/lib/pq"
 )
 
 type PostgresRepo struct {
@@ -84,6 +84,33 @@ func (p *PostgresRepo) GetAllFavourites(ctx context.Context, userSSOID int) ([]m
 		favourites = append(favourites, item)
 	}
 
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating favourites: %w", err)
+	}
+
+	return favourites, nil
+}
+
+func (p *PostgresRepo) GetByIDs(ctx context.Context, ids []int) ([]models.Favourite, error) {
+	if len(ids) == 0 {
+		return []models.Favourite{}, nil
+	}
+
+	query := `SELECT id, user_sso_id, sneaker_id, created_at FROM favourites_items WHERE id = ANY($1)`
+	rows, err := p.db.QueryContext(ctx, query, pq.Array(ids))
+	if err != nil {
+		return nil, fmt.Errorf("failed to get favourites by ids: %w", err)
+	}
+	defer rows.Close()
+
+	var favourites []models.Favourite
+	for rows.Next() {
+		var item models.Favourite
+		if err := rows.Scan(&item.ID, &item.UserSSOID, &item.SneakerID, &item.AddedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan favourite: %w", err)
+		}
+		favourites = append(favourites, item)
+	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("error iterating favourites: %w", err)
 	}

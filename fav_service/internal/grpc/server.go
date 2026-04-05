@@ -26,7 +26,7 @@ func New(
 	favService favourites.FavouritesService,
 	port int,
 ) *App {
-	// Recovery interceptor options
+	// Настройки interceptor'а восстановления после паник
 	recoveryOpts := []grpc_recovery.Option{
 		grpc_recovery.WithRecoveryHandler(func(p interface{}) (err error) {
 			log.Error("recovered from panic", slog.Any("panic", p))
@@ -34,7 +34,7 @@ func New(
 		}),
 	}
 
-	// Create gRPC server with interceptors
+	// Создаём gRPC-сервер с interceptor'ами
 	gRPCServer := grpc.NewServer(
 		grpc.UnaryInterceptor(
 			grpc_middleware.ChainUnaryServer(
@@ -45,7 +45,7 @@ func New(
 		),
 	)
 
-	// Register favourites service
+	// Регистрируем сервис избранного
 	favourites.Register(gRPCServer, favService)
 
 	return &App{
@@ -55,11 +55,6 @@ func New(
 	}
 }
 
-func (a *App) MustRun() {
-	if err := a.Run(); err != nil {
-		panic(err)
-	}
-}
 
 func (a *App) Run() error {
 	const op = "grpcapp.Run"
@@ -87,7 +82,7 @@ func (a *App) Stop() {
 	a.gRPCServer.GracefulStop()
 }
 
-// loggingInterceptor logs all gRPC requests
+// loggingInterceptor логирует все gRPC-запросы
 func loggingInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
@@ -95,8 +90,11 @@ func loggingInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
+		rid := requestIDFromMD(ctx)
+
 		log.Info("gRPC request",
 			slog.String("method", info.FullMethod),
+			slog.String("request_id", rid),
 		)
 
 		resp, err := handler(ctx, req)
@@ -104,6 +102,7 @@ func loggingInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 		if err != nil {
 			log.Error("gRPC request failed",
 				slog.String("method", info.FullMethod),
+				slog.String("request_id", rid),
 				slog.String("error", err.Error()),
 			)
 		}
@@ -112,7 +111,20 @@ func loggingInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 	}
 }
 
-// userContextInterceptor extracts user_id from metadata and adds to context
+// requestIDFromMD извлекает request_id из gRPC-метаданных.
+func requestIDFromMD(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	vals := md.Get("request_id")
+	if len(vals) == 0 {
+		return ""
+	}
+	return vals[0]
+}
+
+// userContextInterceptor извлекает user_id из метаданных и добавляет в контекст
 func userContextInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
@@ -130,8 +142,8 @@ func userContextInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 			return nil, status.Error(codes.Unauthenticated, "user_id not found in metadata")
 		}
 
-		// Add user_id to context for use in handlers
-		ctx = context.WithValue(ctx, "user_id", userIDs[0])
+		// Добавляем user_id в контекст для использования в хендлерах
+		ctx = context.WithValue(ctx, favourites.UserIDKey, userIDs[0])
 
 		return handler(ctx, req)
 	}

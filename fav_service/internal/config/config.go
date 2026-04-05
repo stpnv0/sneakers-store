@@ -75,16 +75,3 @@ func Load(configPath string) (*Config, error) {
 	return &cfg, nil
 }
 
-// MustLoad загружает конфигурацию из файла или паникует при ошибке
-func MustLoad() *Config {
-	path := os.Getenv("CONFIG_PATH")
-	if path == "" {
-		path = "config/config.yaml"
-	}
-
-	cfg, err := Load(path)
-	if err != nil {
-		panic(fmt.Sprintf("failed to load config: %v", err))
-	}
-	return cfg
-}

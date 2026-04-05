@@ -1,0 +1,14 @@
+dir: '{{.InterfaceDir}}/mocks'
+structname: Mock{{.InterfaceName}}
+pkgname: mocks
+template: testify
+template-data:
+  unroll-variadic: true
+packages:
+  fav_service/internal/grpc/favourites:
+    interfaces:
+      FavouritesService: {}
+  fav_service/internal/services:
+    interfaces:
+      CacheRepo: {}
+      FavouritesRepo: {}

@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -11,14 +12,14 @@ import (
 	"github.com/go-redis/redis/v8"
 )
 
+var ErrCacheMiss = errors.New("cache miss")
+
 type redisRepo struct {
 	client *redis.Client
 }
 
 func NewRedisRepo(client *redis.Client) *redisRepo {
-	return &redisRepo{
-		client: client,
-	}
+	return &redisRepo{client: client}
 }
 
 func getKey(userSSOID int) string {
@@ -28,8 +29,12 @@ func getKey(userSSOID int) string {
 func (r *redisRepo) SetFavourites(ctx context.Context, userSSOID int, favourites []models.Favourite, ttl time.Duration) error {
 	key := getKey(userSSOID)
 
-	pipe := r.client.Pipeline()
+	expiry := ttl
+	if expiry <= 0 {
+		expiry = 24 * time.Hour
+	}
 
+	pipe := r.client.Pipeline()
 	pipe.Del(ctx, key)
 
 	if len(favourites) > 0 {
@@ -38,47 +43,53 @@ func (r *redisRepo) SetFavourites(ctx context.Context, userSSOID int, favourites
 			interfaceIDs[i] = item.SneakerID
 		}
 		pipe.SAdd(ctx, key, interfaceIDs...)
-	}
-
-	if ttl > 0 {
-		pipe.Expire(ctx, key, ttl)
 	} else {
-		pipe.Expire(ctx, key, 24*time.Hour)
-	}
-	_, err := pipe.Exec(ctx)
-	if err != nil {
-		fmt.Printf("ERROR: Failed to set cache for key %s: %v\n", key, err)
-		return fmt.Errorf("failed to set cache: %w", err)
+		// Store a sentinel value so Exists returns 1 for empty favourites (cache hit).
+		pipe.SAdd(ctx, key, "__empty__")
 	}
 
-	fmt.Printf("INFO: Cache set for key %s with %d items\n", key, len(favourites))
+	pipe.Expire(ctx, key, expiry)
+
+	if _, err := pipe.Exec(ctx); err != nil {
+		return fmt.Errorf("set favourites cache: %w", err)
+	}
+
 	return nil
 }
 
 func (r *redisRepo) InvalidateFavourites(ctx context.Context, userSSOID int) error {
-	key := getKey(userSSOID)
-
-	return r.client.Del(ctx, key).Err()
+	return r.client.Del(ctx, getKey(userSSOID)).Err()
 }
+
 func (r *redisRepo) GetAllFavourites(ctx context.Context, userSSOID int) ([]models.Favourite, error) {
 	key := getKey(userSSOID)
 
-	result, err := r.client.SMembers(ctx, key).Result()
+	exists, err := r.client.Exists(ctx, key).Result()
 	if err != nil {
-		fmt.Printf("ERROR: Failed to get cache for key %s: %v\n", key, err)
-		return nil, fmt.Errorf("failed to get cache: %w", err)
+		return nil, fmt.Errorf("check favourites key existence: %w", err)
+	}
+	if exists == 0 {
+		return nil, ErrCacheMiss
 	}
 
-	fmt.Printf("INFO: Cache retrieved for key %s with %d items\n", key, len(result))
+	result, err := r.client.SMembers(ctx, key).Result()
+	if err != nil {
+		return nil, fmt.Errorf("get favourites from cache: %w", err)
+	}
 
-	favourites := make([]models.Favourite, len(result))
-	for i, idStr := range result {
-		sneakerID, _ := strconv.Atoi(idStr)
-		favourites[i] = models.Favourite{
+	favourites := make([]models.Favourite, 0, len(result))
+	for _, idStr := range result {
+		if idStr == "__empty__" {
+			continue
+		}
+		sneakerID, err := strconv.Atoi(idStr)
+		if err != nil {
+			return nil, fmt.Errorf("parse sneaker_id from cache %q: %w", idStr, err)
+		}
+		favourites = append(favourites, models.Favourite{
 			SneakerID: sneakerID,
 			UserSSOID: userSSOID,
-			// ID and AddedAt are missing in cache, will be zero values
-		}
+		})
 	}
 
 	return favourites, nil

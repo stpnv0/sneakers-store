@@ -2,10 +2,6 @@ package main
 
 import (
 	"context"
-	"fav_service/internal/config"
-	grpcapp "fav_service/internal/grpc"
-	"fav_service/internal/repository"
-	"fav_service/internal/services"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -14,62 +10,93 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+
+	"fav_service/internal/config"
+	grpcapp "fav_service/internal/grpc"
+	"fav_service/internal/repository"
+	"fav_service/internal/services"
 )
 
 func main() {
-	// Инициализация логгера
-	slogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	}))
+	if err := run(); err != nil {
+		slog.Error("fatal error", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+}
 
-	// Загрузка конфигурации
-	cfg := config.MustLoad()
+func run() error {
+	log := setupLogger("fav_service")
 
-	// Подключение к Redis
+	cfgPath := os.Getenv("CONFIG_PATH")
+	if cfgPath == "" {
+		cfgPath = "config/config.yaml"
+	}
+
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Redis
 	redisClient := redis.NewClient(&redis.Options{
 		Addr:     cfg.Redis.Host + ":" + strconv.Itoa(cfg.Redis.Port),
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})
-
-	// Проверка соединения с Redis
-	if err := redisClient.Ping(context.Background()).Err(); err != nil {
-		slogger.Error("Failed to connect to Redis", "error", err)
-		os.Exit(1)
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		return err
 	}
+	defer redisClient.Close()
+	log.Info("connected to redis")
 
-	// Подключение к PostgreSQL
-	pgDSN := cfg.Postgres.DSN()
-	db, err := repository.NewPostgresDB(pgDSN)
+	// PostgreSQL
+	db, err := repository.NewPostgresDB(cfg.Postgres.DSN())
 	if err != nil {
-		slogger.Error("Failed to connect to PostgreSQL", "error", err)
-		os.Exit(1)
+		return err
 	}
 	defer db.Close()
+	log.Info("connected to postgres")
 
-	// Инициализация репозиториев
 	redisRepo := repository.NewRedisRepo(redisClient)
 	pgRepo := repository.NewPostgresRepo(db)
+	favService := services.NewFavService(pgRepo, redisRepo, 24*time.Hour, log)
 
-	favService := services.NewFavService(
-		pgRepo,
-		redisRepo,
-		24*time.Hour, // TTL для кэша - 24 часа
-	)
+	grpcApp := grpcapp.New(log, favService, cfg.GRPC.Port)
 
-	// Инициализация gRPC сервера
-	grpcApp := grpcapp.New(slogger, favService, cfg.GRPC.Port)
+	errCh := make(chan error, 1)
+	go func() {
+		if err := grpcApp.Run(); err != nil {
+			errCh <- err
+		}
+	}()
 
-	go grpcApp.MustRun()
-
-	// Настраиваем грациозное завершение
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-
-	// Блокируемся пока не получим сигнал
-	<-quit
-	slogger.Info("Shutting down favourites service...")
+	select {
+	case <-ctx.Done():
+		log.Info("shutdown signal received")
+	case err := <-errCh:
+		log.Error("grpc server failed", slog.String("error", err.Error()))
+		stop()
+	}
 
 	grpcApp.Stop()
-	slogger.Info("Favourites service stopped")
+	log.Info("favourites service stopped")
+	return nil
+}
+
+func setupLogger(serviceName string) *slog.Logger {
+	env := os.Getenv("ENV")
+
+	var level slog.Level
+	switch env {
+	case "prod":
+		level = slog.LevelInfo
+	default:
+		level = slog.LevelDebug
+	}
+
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})).
+		With(slog.String("service", serviceName))
 }

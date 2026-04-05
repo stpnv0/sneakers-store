@@ -19,6 +19,7 @@ type FavouritesService interface {
 	RemoveFromFavourite(ctx context.Context, userSSOID, sneakerID int) error
 	GetAllFavourites(ctx context.Context, userSSOID int) ([]models.Favourite, error)
 	IsFavourite(ctx context.Context, userSSOID, sneakerID int) (bool, error)
+	GetByIDs(ctx context.Context, ids []int) ([]models.Favourite, error)
 	ParseIDsString(idsParam string) ([]int, error)
 }
 
@@ -123,9 +124,9 @@ func (s *serverAPI) GetFavourites(
 	protoItems := make([]*favv1.FavouriteItem, 0, len(items))
 	for _, item := range items {
 		protoItems = append(protoItems, &favv1.FavouriteItem{
-			Id:        int32(item.ID),
-			UserId:    int32(item.UserSSOID),
-			SneakerId: int32(item.SneakerID),
+			Id:        int64(item.ID),
+			UserId:    int64(item.UserSSOID),
+			SneakerId: int64(item.SneakerID),
 			AddedAt:   item.AddedAt.Unix(),
 		})
 	}
@@ -170,20 +171,50 @@ func (s *serverAPI) GetFavouritesByIDs(
 	ctx context.Context,
 	req *favv1.GetFavouritesByIDsRequest,
 ) (*favv1.GetFavouritesByIDsResponse, error) {
-	return nil, status.Error(codes.Unimplemented, "method GetFavouritesByIDs not implemented")
+	if len(req.GetIds()) == 0 {
+		return &favv1.GetFavouritesByIDsResponse{Items: []*favv1.FavouriteItem{}}, nil
+	}
+
+	ids := make([]int, 0, len(req.GetIds()))
+	for _, id := range req.GetIds() {
+		ids = append(ids, int(id))
+	}
+
+	favourites, err := s.favService.GetByIDs(ctx, ids)
+	if err != nil {
+		s.log.Error("failed to get favourites by ids", slog.String("error", err.Error()))
+		return nil, status.Error(codes.Internal, "failed to get favourites")
+	}
+
+	items := make([]*favv1.FavouriteItem, 0, len(favourites))
+	for _, f := range favourites {
+		items = append(items, &favv1.FavouriteItem{
+			Id:        int64(f.ID),
+			UserId:    int64(f.UserSSOID),
+			SneakerId: int64(f.SneakerID),
+			AddedAt:   f.AddedAt.Unix(),
+		})
+	}
+
+	return &favv1.GetFavouritesByIDsResponse{Items: items}, nil
 }
 
-// Helper functions
+// ContextKey — типизированный ключ для значений контекста, избегающий коллизий.
+type ContextKey string
 
+// UserIDKey — ключ для хранения user_id в контексте.
+const UserIDKey ContextKey = "user_id"
+
+// Helpers
 func getUserIDFromContext(ctx context.Context) (int, error) {
-	userIDStr, ok := ctx.Value("user_id").(string)
+	userIDStr, ok := ctx.Value(UserIDKey).(string)
 	if !ok {
-		return 0, fmt.Errorf("user_id not found in context")
+		return 0, fmt.Errorf("user_id не найден в контексте")
 	}
 
 	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
-		return 0, fmt.Errorf("invalid user_id format: %w", err)
+		return 0, fmt.Errorf("невалидный формат user_id: %w", err)
 	}
 
 	return userID, nil
