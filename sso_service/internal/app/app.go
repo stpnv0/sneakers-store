@@ -13,8 +13,10 @@ import (
 
 type App struct {
 	GRPCServer *grpcapp.App
+	storage    *postgres.Storage
 }
 
+// New creates a new App instance. Returns an error instead of panicking.
 func New(
 	log *slog.Logger,
 	grpcPort int,
@@ -24,24 +26,22 @@ func New(
 	dbPassword string,
 	dbName string,
 	tokenTTL time.Duration,
-) *App {
+) (*App, error) {
 	connString := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
 		dbUser, dbPassword, dbHost, dbPort, dbName)
 
 	storage, err := postgres.New(context.Background(), connString)
 	if err != nil {
-		panic(err)
+		return nil, fmt.Errorf("init storage: %w", err)
 	}
 
-	// Sync APP_SECRET from environment to database
 	appSecret := os.Getenv("APP_SECRET")
 	if appSecret == "" {
 		log.Warn("APP_SECRET not set, using placeholder from database")
 	} else {
-		err = storage.UpdateAppSecret(context.Background(), 1, appSecret)
-		if err != nil {
+		if err := storage.UpdateAppSecret(context.Background(), 1, appSecret); err != nil {
 			log.Error("failed to update app secret", slog.String("error", err.Error()))
-			// Don't panic - continue with existing secret
+			// Don't fail — continue with existing secret.
 		} else {
 			log.Info("app secret synchronized from environment variable")
 		}
@@ -53,5 +53,13 @@ func New(
 
 	return &App{
 		GRPCServer: grpcApp,
+		storage:    storage,
+	}, nil
+}
+
+// Close releases all resources held by the application.
+func (a *App) Close() {
+	if a.storage != nil {
+		a.storage.Close()
 	}
 }

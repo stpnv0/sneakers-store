@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"sso/internal/domain/models"
 	"sso/internal/lib/jwt"
-	"sso/internal/lib/logger/sl"
 	"sso/internal/storage"
 	"time"
 
@@ -80,7 +79,6 @@ func (a *Auth) Login(
 
 	log := a.log.With(
 		slog.String("op", op),
-		slog.String("username", email),
 	)
 
 	log.Info("attempting to login user")
@@ -88,18 +86,18 @@ func (a *Auth) Login(
 	user, err := a.usrProvider.User(ctx, email)
 	if err != nil {
 		if errors.Is(err, storage.ErrUserNotFound) {
-			a.log.Warn("user not found", sl.Err(err))
+			a.log.Warn("user not found", slog.String("error", err.Error()))
 
 			return "", fmt.Errorf("%s: %w", op, ErrInvalidCredentials)
 		}
 
-		a.log.Error("failed to get user", sl.Err(err))
+		a.log.Error("failed to get user", slog.String("error", err.Error()))
 
 		return "", fmt.Errorf("%s: %w", op, err)
 	}
 
 	if err := bcrypt.CompareHashAndPassword(user.PassHash, []byte(password)); err != nil {
-		a.log.Info("invalid credentials", sl.Err(err))
+		a.log.Warn("invalid credentials", slog.String("error", err.Error()))
 
 		return "", fmt.Errorf("%s: %w", op, ErrInvalidCredentials)
 	}
@@ -113,7 +111,7 @@ func (a *Auth) Login(
 
 	token, err := jwt.NewToken(user, app, a.tokenTTL)
 	if err != nil {
-		a.log.Error("failed to generate token", sl.Err(err))
+		a.log.Error("failed to generate token", slog.String("error", err.Error()))
 
 		return "", fmt.Errorf("%s: %w", op, err)
 	}
@@ -128,21 +126,20 @@ func (a *Auth) RegisterNewUser(ctx context.Context, email string, pass string) (
 
 	log := a.log.With(
 		slog.String("op", op),
-		slog.String("email", email),
 	)
 
 	log.Info("registering user")
 
 	passHash, err := bcrypt.GenerateFromPassword([]byte(pass), bcrypt.DefaultCost)
 	if err != nil {
-		log.Error("failed to generate password hash", sl.Err(err))
+		log.Error("failed to generate password hash", slog.String("error", err.Error()))
 
 		return 0, fmt.Errorf("%s: %w", op, err)
 	}
 
 	id, err := a.usrSaver.SaveUser(ctx, email, passHash)
 	if err != nil {
-		log.Error("failed to save user", sl.Err(err))
+		log.Error("failed to save user", slog.String("error", err.Error()))
 
 		return 0, fmt.Errorf("%s: %w", op, err)
 	}
@@ -169,30 +166,4 @@ func (a *Auth) IsAdmin(ctx context.Context, userID int64) (bool, error) {
 	log.Info("checked if user is admin", slog.Bool("is_admin", isAdmin))
 
 	return isAdmin, nil
-}
-
-// GetAppSecret returns the secret for the given app_id.
-func (a *Auth) GetAppSecret(ctx context.Context, appID int) (string, error) {
-	const op = "Auth.GetAppSecret"
-
-	log := a.log.With(
-		slog.String("op", op),
-		slog.Int("app_id", appID),
-	)
-
-	log.Info("retrieving app secret")
-
-	app, err := a.appProvider.App(ctx, appID)
-	if err != nil {
-		if errors.Is(err, storage.ErrAppNotFound) {
-			log.Warn("app not found")
-			return "", fmt.Errorf("%s: %w", op, ErrInvalidAppID)
-		}
-		log.Error("failed to get app", sl.Err(err))
-		return "", fmt.Errorf("%s: %w", op, err)
-	}
-
-	log.Info("app secret retrieved successfully")
-
-	return app.Secret, nil
 }

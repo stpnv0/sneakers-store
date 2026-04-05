@@ -1,52 +1,46 @@
 package main
 
 import (
-	"errors"
+	"database/sql"
 	"flag"
 	"fmt"
 	"os"
 
-	//либа для миграции
-	"github.com/golang-migrate/migrate/v4"
-	//драйвер для вполнения миграции Postgres
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	//Драйвер для получения миграции из файлов
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/pressly/goose/v3"
 )
 
 func main() {
-	var migrationsPath, migrationsTable string
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
 
-	flag.StringVar(&migrationsPath, "migrations-path", "", "path to migrations")
-	flag.StringVar(&migrationsTable, "migrations-table", "migrations", "name of migrations table")
+func run() error {
+	dsn := os.Getenv("POSTGRES_DSN")
+	dir := flag.String("dir", "/app/migrations", "migrations directory")
+	command := flag.String("command", "up", "goose command (up, down, status, reset, version)")
 	flag.Parse()
 
-	if migrationsPath == "" {
-		panic("migrations-path is required")
+	if dsn == "" {
+		return fmt.Errorf("POSTGRES_DSN environment variable is required")
 	}
 
-	postgresDSN := os.Getenv("POSTGRES_DSN")
-	if postgresDSN == "" {
-		panic("POSTGRES_DSN env variable is required")
-	}
-
-	m, err := migrate.New(
-		"file://"+migrationsPath,
-		fmt.Sprintf("%s&x-migrations-table=%s", postgresDSN, migrationsTable),
-	)
+	db, err := sql.Open("pgx", dsn)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer db.Close()
+
+	if err := db.Ping(); err != nil {
+		return fmt.Errorf("ping db: %w", err)
 	}
 
-	if err := m.Up(); err != nil {
-		if errors.Is(err, migrate.ErrNoChange) {
-			fmt.Println("no migrations to apply")
-
-			return
-		}
-
-		panic(err)
+	if err := goose.Run(*command, db, *dir); err != nil {
+		return fmt.Errorf("goose %s: %w", *command, err)
 	}
 
 	fmt.Println("migrations applied successfully")
+	return nil
 }

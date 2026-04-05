@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS users
 (
     id SERIAL PRIMARY KEY,
@@ -15,5 +16,6 @@ CREATE TABLE IF NOT EXISTS apps
     secret TEXT NOT NULL UNIQUE
 );
 
--- Note: The app secret will be inserted by a separate init script
--- that reads from APP_SECRET environment variable
+-- +goose Down
+DROP TABLE IF EXISTS apps;
+DROP TABLE IF EXISTS users;

@@ -26,7 +26,10 @@ func New(t *testing.T) (context.Context, *Suite) {
 	t.Helper()   //чтобы при фейле правильно формировался стек вызовов и эта функция не была указана как финальная
 	t.Parallel() // мы можем выполнять наши тесты параллельно
 
-	cfg := config.MustLoadByPath("../config/local.yaml")
+	cfg, err := config.LoadByPath("../config/local.yaml")
+	if err != nil {
+		t.Fatalf("failed to load config: %v", err)
+	}
 
 	ctx, cancelCtx := context.WithTimeout(context.Background(), cfg.GRPC.Timeout)
 

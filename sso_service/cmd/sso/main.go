@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -17,13 +18,23 @@ const (
 )
 
 func main() {
-	cfg := config.MustLoad()
+	if err := run(); err != nil {
+		slog.Error("fatal error", slog.String("error", err.Error()))
+		os.Exit(1)
+	}
+}
+
+func run() error {
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
 
 	log := setupLogger(cfg.Env)
 
-	log.Info("starting sso server", slog.Any("config", cfg))
+	log.Info("starting sso server")
 
-	application := app.New(
+	application, err := app.New(
 		log,
 		cfg.GRPC.Port,
 		cfg.DB.Host,
@@ -33,21 +44,32 @@ func main() {
 		cfg.DB.DBName,
 		cfg.TokenTTL,
 	)
+	if err != nil {
+		return err
+	}
+	defer application.Close()
 
-	go application.GRPCServer.MustRun() //в горутине потому что дальше мы будем слушать сигналы из опепрационных систем
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
-	//Graceful shutdown
-	stop := make(chan os.Signal, 1)                      // перед завершением работы: операционная система отдает сигнал программе
-	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT) //и мы его получаем. программа сама занимается своим завершением
+	errCh := make(chan error, 1)
+	go func() {
+		if err := application.GRPCServer.Run(); err != nil {
+			errCh <- err
+		}
+	}()
 
-	sign := <-stop // записываем это в канал. получается в отдельной горутине работаем пока не придет один из сигналов от ос
-
-	log.Info("stopping application", slog.String("signal", sign.String()))
+	select {
+	case <-ctx.Done():
+		log.Info("shutdown signal received")
+	case err := <-errCh:
+		log.Error("grpc server failed", slog.String("error", err.Error()))
+		stop()
+	}
 
 	application.GRPCServer.Stop()
-
-	log.Info("Application stopped")
-	//подобные компоненты, например при добавлении бд (пулл соединений) надо тоже оборачивать в подобные приложения с методами Run, Stop
+	log.Info("sso service stopped")
+	return nil
 }
 
 func setupLogger(env string) *slog.Logger {
@@ -64,9 +86,13 @@ func setupLogger(env string) *slog.Logger {
 		log = slog.New(
 			slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
 		)
+	default:
+		log = slog.New(
+			slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}),
+		)
 	}
 
-	return log
+	return log.With(slog.String("service", "sso_service"))
 }
 
 func setupPrettySlog() *slog.Logger {
@@ -80,5 +106,3 @@ func setupPrettySlog() *slog.Logger {
 
 	return slog.New(handler)
 }
-
-// go run cmd/sso/main.go --config=./config/local.yaml

@@ -2,35 +2,37 @@ FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
+RUN apk add --no-cache git
+
 COPY protos ./protos
+COPY sso_service/go.mod sso_service/go.sum ./sso_service/
+WORKDIR /app/sso_service
+RUN go mod download
 
-COPY sso_service .
+COPY sso_service ./
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/bin/sso_service  ./cmd/sso && \
+    CGO_ENABLED=0 GOOS=linux go build -o /app/bin/sso_migrator ./cmd/migrator
 
-# Заменяем относительный путь в replace директиве
-RUN sed -i 's|replace github.com/stpnv0/protos => ../protos|replace github.com/stpnv0/protos => ./protos|g' go.mod
+# ---
 
-# Устанавливаем необходимые зависимости для сборки
-RUN apk add --no-cache git build-base
+FROM alpine:3.20
 
-# Собираем приложения
-RUN go mod download && \
-    go mod tidy && \
-    CGO_ENABLED=1 go build -o sso_service ./cmd/sso && \
-    CGO_ENABLED=1 go build -o sso_migrator ./cmd/migrator
+RUN apk --no-cache add ca-certificates tzdata && \
+    addgroup -g 1000 appuser && \
+    adduser -D -u 1000 -G appuser appuser
 
-FROM alpine:latest
+WORKDIR /app
 
-RUN apk --no-cache add ca-certificates sqlite tzdata
+COPY --from=builder --chmod=755 /app/bin/sso_service  ./sso_service
+COPY --from=builder --chmod=755 /app/bin/sso_migrator ./sso_migrator
+COPY --from=builder /app/sso_service/config     ./config
+COPY --from=builder /app/sso_service/migrations ./migrations
 
-WORKDIR /root/
-
-COPY --from=builder /app/sso_service .
-COPY --from=builder /app/sso_migrator .
-COPY --from=builder /app/config ./config
-COPY --from=builder /app/migrations ./migrations
-
-RUN mkdir -p /root/storage
+USER appuser
 
 EXPOSE 44044
 
-CMD ["./sso_service", "--config=./config/prod.yaml"]
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["true"]
+
+CMD ["/app/sso_service"]
