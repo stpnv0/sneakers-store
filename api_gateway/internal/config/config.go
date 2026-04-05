@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log"
+	"fmt"
 
 	"github.com/spf13/viper"
 )
@@ -23,24 +23,26 @@ type DownstreamConfig struct {
 	OrdergRPC      string `mapstructure:"order_grpc"`
 }
 
-func Load(path string) *Config {
+func Load(path string) (*Config, error) {
 	viper.SetConfigFile(path)
-
 	viper.AutomaticEnv()
-	viper.BindEnv("app_secret", "APP_SECRET")
+
+	if err := viper.BindEnv("app_secret", "APP_SECRET"); err != nil {
+		return nil, fmt.Errorf("config: bind env APP_SECRET: %w", err)
+	}
 
 	if err := viper.ReadInConfig(); err != nil {
-		log.Fatalf("[ERROR] Can't read config %s: %v", path, err)
+		return nil, fmt.Errorf("config: read file %s: %w", path, err)
 	}
 
-	var config Config
-	if err := viper.Unmarshal(&config); err != nil {
-		log.Fatalf("[ERROR] Can't unmarshal config: %v", err)
+	var cfg Config
+	if err := viper.Unmarshal(&cfg); err != nil {
+		return nil, fmt.Errorf("config: unmarshal: %w", err)
 	}
 
-	if config.AppSecret == "" {
-		log.Fatal("[ERROR] APP_SECRET must be set via environment variable or config file")
+	if cfg.AppSecret == "" {
+		return nil, fmt.Errorf("config: APP_SECRET must be set via environment variable or config file")
 	}
 
-	return &config
+	return &cfg, nil
 }

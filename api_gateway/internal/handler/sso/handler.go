@@ -1,7 +1,7 @@
 package auth
 
 import (
-	"api_gateway/internal/client/sso"
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -10,22 +10,27 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const AppID = 1
+const appID int32 = 1
+
+type SSOClient interface {
+	Register(ctx context.Context, email, password string) (int64, error)
+	Login(ctx context.Context, email, password string, appID int32) (string, error)
+}
 
 type Handler struct {
-	client *sso.Client
+	client SSOClient
 	log    *slog.Logger
 }
 
-func NewHandler(client *sso.Client, log *slog.Logger) *Handler {
+func NewHandler(client SSOClient, log *slog.Logger) *Handler {
 	return &Handler{client: client, log: log}
 }
 
-// Register обрабатывает POST /auth/register
+// Register - POST /auth/register
 func (h *Handler) Register(c *gin.Context) {
 	var reqBody struct {
 		Email    string `json:"email" binding:"required,email"`
-		Password string `json:"password" binding:"required,min=3"`
+		Password string `json:"password" binding:"required,min=3,max=72"`
 	}
 	if err := c.ShouldBindJSON(&reqBody); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -47,7 +52,7 @@ func (h *Handler) Register(c *gin.Context) {
 	c.JSON(http.StatusCreated, gin.H{"user_id": userID})
 }
 
-// Login обрабатывает POST /auth/login
+// Login - POST /auth/login
 func (h *Handler) Login(c *gin.Context) {
 	var reqBody struct {
 		Email    string `json:"email" binding:"required,email"`
@@ -58,7 +63,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	token, err := h.client.Login(c.Request.Context(), reqBody.Email, reqBody.Password, AppID)
+	token, err := h.client.Login(c.Request.Context(), reqBody.Email, reqBody.Password, appID)
 	if err != nil {
 		st, ok := status.FromError(err)
 		if ok && st.Code() == codes.InvalidArgument {

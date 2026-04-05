@@ -1,25 +1,41 @@
 package order
 
 import (
-	"api_gateway/internal/client/cart"
-	"api_gateway/internal/client/order"
-	"api_gateway/internal/client/product"
+	"context"
 	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	orderv1 "github.com/stpnv0/protos/gen/go/order"
+	productv1 "github.com/stpnv0/protos/gen/go/product"
+
+	"api_gateway/internal/middleware"
 )
 
+type OrderClient interface {
+	CreateOrder(ctx context.Context, userID int64, items []*orderv1.OrderItem) (*orderv1.Order, error)
+	GetOrder(ctx context.Context, orderID int64) (*orderv1.Order, error)
+	GetUserOrders(ctx context.Context, userID int64) ([]*orderv1.Order, error)
+}
+
+type ProductLookup interface {
+	GetSneakerByID(ctx context.Context, id int64) (*productv1.Sneaker, error)
+	GetSneakersByIDs(ctx context.Context, ids []int64) ([]*productv1.Sneaker, error)
+}
+
+type CartClearer interface {
+	ClearCart(ctx context.Context, userID int64) error
+}
+
 type Handler struct {
-	orderClient   *order.Client
-	productClient *product.Client
-	cartClient    *cart.Client
+	orderClient   OrderClient
+	productClient ProductLookup
+	cartClient    CartClearer
 	log           *slog.Logger
 }
 
-func New(orderClient *order.Client, productClient *product.Client, cartClient *cart.Client, log *slog.Logger) *Handler {
+func New(orderClient OrderClient, productClient ProductLookup, cartClient CartClearer, log *slog.Logger) *Handler {
 	return &Handler{
 		orderClient:   orderClient,
 		productClient: productClient,
@@ -34,13 +50,13 @@ type CreateOrderRequest struct {
 
 type OrderItemRequest struct {
 	SneakerID int64 `json:"sneaker_id" binding:"required"`
-	Quantity  int32 `json:"quantity" binding:"required"`
+	Quantity  int32 `json:"quantity" binding:"required,min=1"`
 }
 
 func (h *Handler) CreateOrder(c *gin.Context) {
-	userID, exists := c.Get("user_sso_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+	userID, err := middleware.GetUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -50,48 +66,64 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 		return
 	}
 
-	// Fetch product details to get current prices
+	// Собираем все ID товаров для batch
+	sneakerIDs := make([]int64, len(req.Items))
+	for i, item := range req.Items {
+		sneakerIDs[i] = item.SneakerID
+	}
+
+	sneakers, err := h.productClient.GetSneakersByIDs(c.Request.Context(), sneakerIDs)
+	if err != nil {
+		h.log.Error("failed to get sneakers", slog.String("error", err.Error()))
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid sneaker_id"})
+		return
+	}
+
+	priceMap := make(map[int64]int64, len(sneakers))
+	for _, s := range sneakers {
+		priceMap[s.GetId()] = s.GetPriceKopecks()
+	}
+
 	var items []*orderv1.OrderItem
 	for _, item := range req.Items {
-		// Get product details
-		sneaker, err := h.productClient.GetSneakerByID(c.Request.Context(), item.SneakerID)
-		if err != nil {
-			h.log.Error("failed to get sneaker", slog.Int64("sneaker_id", item.SneakerID), slog.String("error", err.Error()))
+		price, ok := priceMap[item.SneakerID]
+		if !ok {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid sneaker_id"})
 			return
 		}
-
 		items = append(items, &orderv1.OrderItem{
-			SneakerId:       int32(item.SneakerID),
-			Quantity:        item.Quantity,
-			PriceAtPurchase: int32(sneaker.Price),
+			SneakerId:              item.SneakerID,
+			Quantity:               item.Quantity,
+			PriceAtPurchaseKopecks: price,
 		})
 	}
 
-	orderID, err := h.orderClient.CreateOrder(c.Request.Context(), int64(userID.(int)), items)
+	order, err := h.orderClient.CreateOrder(c.Request.Context(), userID, items)
 	if err != nil {
 		h.log.Error("failed to create order", slog.String("error", err.Error()))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create order"})
 		return
 	}
 
-	// Clear cart after successful order creation
-	if err := h.cartClient.ClearCart(c.Request.Context(), userID.(int)); err != nil {
+	if err := h.cartClient.ClearCart(c.Request.Context(), userID); err != nil {
 		h.log.Warn("failed to clear cart after order creation", slog.String("error", err.Error()))
-		// Don't fail the request, just log the warning
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"order_id": orderID})
+	c.JSON(http.StatusCreated, gin.H{
+		"order_id":    order.GetId(),
+		"payment_url": order.GetPaymentUrl(),
+		"status":      order.GetStatus(),
+	})
 }
 
 func (h *Handler) GetUserOrders(c *gin.Context) {
-	userID, exists := c.Get("user_sso_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not authenticated"})
+	userID, err := middleware.GetUserIDFromContext(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
-	orders, err := h.orderClient.GetUserOrders(c.Request.Context(), int64(userID.(int)))
+	orders, err := h.orderClient.GetUserOrders(c.Request.Context(), userID)
 	if err != nil {
 		h.log.Error("failed to get user orders", slog.String("error", err.Error()))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get user orders"})
@@ -102,9 +134,14 @@ func (h *Handler) GetUserOrders(c *gin.Context) {
 }
 
 func (h *Handler) GetOrder(c *gin.Context) {
-	orderIDStr := c.Param("id")
-	orderID, err := strconv.ParseInt(orderIDStr, 10, 64)
+	userID, err := middleware.GetUserIDFromContext(c)
 	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	orderID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || orderID <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid order id"})
 		return
 	}
@@ -113,6 +150,12 @@ func (h *Handler) GetOrder(c *gin.Context) {
 	if err != nil {
 		h.log.Error("failed to get order", slog.String("error", err.Error()))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get order"})
+		return
+	}
+
+	// Проверяем, что заказ принадлежит аутентифицированному пользователю
+	if order.GetUserId() != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "access denied"})
 		return
 	}
 

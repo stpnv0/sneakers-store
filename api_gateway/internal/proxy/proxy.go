@@ -2,17 +2,17 @@ package proxy
 
 import (
 	"fmt"
-	"log"
 	"net/http/httputil"
 	"net/url"
 
 	"github.com/gin-gonic/gin"
 )
 
-func ProxyHandler(targetURL string) gin.HandlerFunc {
+// Handler возвращает Gin-хендлер, проксирующий запросы на targetURL
+func Handler(targetURL string) (gin.HandlerFunc, error) {
 	target, err := url.Parse(targetURL)
 	if err != nil {
-		log.Fatalf("некорректный URL %s: %v", targetURL, err)
+		return nil, fmt.Errorf("proxy: invalid URL %s: %w", targetURL, err)
 	}
 
 	return func(c *gin.Context) {
@@ -23,5 +23,5 @@ func ProxyHandler(targetURL string) gin.HandlerFunc {
 		}
 
 		proxy.ServeHTTP(c.Writer, c.Request)
-	}
+	}, nil
 }

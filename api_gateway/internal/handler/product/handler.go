@@ -1,7 +1,7 @@
 package product
 
 import (
-	"api_gateway/internal/client/product"
+	"context"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -13,21 +13,32 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type ProductClient interface {
+	GetAllSneakers(ctx context.Context, limit, offset uint64) ([]*productv1.Sneaker, error)
+	GetSneakerByID(ctx context.Context, id int64) (*productv1.Sneaker, error)
+	AddSneaker(ctx context.Context, title string, priceKopecks int64) (*productv1.Sneaker, error)
+	GenerateUploadURL(ctx context.Context, originalFilename, contentType string) (*productv1.GenerateUploadURLResponse, error)
+	UpdateProductImage(ctx context.Context, productID int64, imageKey string) error
+	GetSneakersByIDs(ctx context.Context, ids []int64) ([]*productv1.Sneaker, error)
+}
+
 type Handler struct {
-	client *product.Client
+	client ProductClient
 	log    *slog.Logger
 }
 
-func NewHandler(client *product.Client, log *slog.Logger) *Handler {
-	return &Handler{
-		client: client,
-		log:    log,
-	}
+func NewHandler(client ProductClient, log *slog.Logger) *Handler {
+	return &Handler{client: client, log: log}
 }
+
+const (
+	defaultLimit = 20
+	maxLimit     = 100
+)
 
 func (h *Handler) GetSneakerByID(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	if err != nil || id <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid product ID"})
 		return
 	}
@@ -59,7 +70,12 @@ func (h *Handler) GetSneakersByIDs(c *gin.Context) {
 	}
 
 	if len(ids) == 0 {
-		c.JSON(http.StatusOK, gin.H{"sneakers": make([]interface{}, 0)})
+		c.JSON(http.StatusOK, gin.H{"sneakers": []interface{}{}})
+		return
+	}
+
+	if len(ids) > maxLimit {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "too many IDs, max 100"})
 		return
 	}
 
@@ -73,8 +89,18 @@ func (h *Handler) GetSneakersByIDs(c *gin.Context) {
 }
 
 func (h *Handler) GetAllSneakers(c *gin.Context) {
-	limit, _ := strconv.ParseUint(c.DefaultQuery("limit", "20"), 10, 64)
-	offset, _ := strconv.ParseUint(c.DefaultQuery("offset", "0"), 10, 64)
+	limit, err := strconv.ParseUint(c.DefaultQuery("limit", "20"), 10, 64)
+	if err != nil || limit == 0 {
+		limit = defaultLimit
+	}
+	if limit > maxLimit {
+		limit = maxLimit
+	}
+
+	offset, err := strconv.ParseUint(c.DefaultQuery("offset", "0"), 10, 64)
+	if err != nil {
+		offset = 0
+	}
 
 	sneakers, err := h.client.GetAllSneakers(c.Request.Context(), limit, offset)
 	if err != nil {
@@ -90,15 +116,15 @@ func (h *Handler) GetAllSneakers(c *gin.Context) {
 
 func (h *Handler) AddSneaker(c *gin.Context) {
 	var reqBody struct {
-		Title string  `json:"title" binding:"required"`
-		Price float32 `json:"price" binding:"required,gt=0"`
+		Title        string `json:"title" binding:"required"`
+		PriceKopecks int64  `json:"price_kopecks" binding:"required,gt=0"`
 	}
 	if err := c.ShouldBindJSON(&reqBody); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
-	sneaker, err := h.client.AddSneaker(c.Request.Context(), reqBody.Title, reqBody.Price)
+	sneaker, err := h.client.AddSneaker(c.Request.Context(), reqBody.Title, reqBody.PriceKopecks)
 	if err != nil {
 		handleGRPCError(c, h.log, err, "failed to add product")
 		return
@@ -126,10 +152,11 @@ func (h *Handler) GenerateUploadURL(c *gin.Context) {
 
 func (h *Handler) UpdateProductImage(c *gin.Context) {
 	id, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil {
+	if err != nil || id <= 0 {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid product ID"})
 		return
 	}
+
 	var reqBody struct {
 		ImageKey string `json:"image_key" binding:"required"`
 	}
@@ -138,8 +165,7 @@ func (h *Handler) UpdateProductImage(c *gin.Context) {
 		return
 	}
 
-	err = h.client.UpdateProductImage(c.Request.Context(), id, reqBody.ImageKey)
-	if err != nil {
+	if err := h.client.UpdateProductImage(c.Request.Context(), id, reqBody.ImageKey); err != nil {
 		handleGRPCError(c, h.log, err, "failed to update product image")
 		return
 	}
@@ -149,7 +175,6 @@ func (h *Handler) UpdateProductImage(c *gin.Context) {
 func handleGRPCError(c *gin.Context, log *slog.Logger, err error, message string) {
 	st, ok := status.FromError(err)
 	if !ok {
-		// Это не gRPC ошибка, а, например, сетевая проблема
 		log.Error(message, slog.String("error", err.Error()))
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 		return

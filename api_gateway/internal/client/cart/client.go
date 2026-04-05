@@ -6,6 +6,8 @@ import (
 	"log/slog"
 	"time"
 
+	"api_gateway/internal/middleware"
+
 	grpclog "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	cartv1 "github.com/stpnv0/protos/gen/go/cart"
@@ -16,8 +18,9 @@ import (
 )
 
 type Client struct {
-	api cartv1.CartServiceClient
-	log *slog.Logger
+	api  cartv1.CartServiceClient
+	conn *grpc.ClientConn
+	log  *slog.Logger
 }
 
 func New(ctx context.Context, log *slog.Logger, addr string, timeout time.Duration, retriesCount int) (*Client, error) {
@@ -29,14 +32,15 @@ func New(ctx context.Context, log *slog.Logger, addr string, timeout time.Durati
 		grpcretry.WithPerRetryTimeout(timeout),
 	}
 
-	logOpts := []grpclog.Option{
-		grpclog.WithLogOnEvents(grpclog.PayloadReceived, grpclog.PayloadSent),
-	}
+	// Общий таймаут вызова
+	callTimeout := timeout*time.Duration(retriesCount) + 2*time.Second
 
 	cc, err := grpc.DialContext(ctx, addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(
-			grpclog.UnaryClientInterceptor(InterceptorLogger(log), logOpts...),
+			requestIDInterceptor(),
+			deadlineInterceptor(callTimeout),
+			grpclog.UnaryClientInterceptor(InterceptorLogger(log)),
 			grpcretry.UnaryClientInterceptor(retryOpts...),
 		),
 	)
@@ -45,12 +49,17 @@ func New(ctx context.Context, log *slog.Logger, addr string, timeout time.Durati
 	}
 
 	return &Client{
-		api: cartv1.NewCartServiceClient(cc),
-		log: log,
+		api:  cartv1.NewCartServiceClient(cc),
+		conn: cc,
+		log:  log,
 	}, nil
 }
 
-func (c *Client) AddToCart(ctx context.Context, userID int, sneakerID, quantity int32) error {
+func (c *Client) Close() error {
+	return c.conn.Close()
+}
+
+func (c *Client) AddToCart(ctx context.Context, userID int64, sneakerID int64, quantity int32) error {
 	const op = "grpc.AddToCart"
 
 	md := metadata.New(map[string]string{
@@ -69,7 +78,7 @@ func (c *Client) AddToCart(ctx context.Context, userID int, sneakerID, quantity 
 	return nil
 }
 
-func (c *Client) GetCart(ctx context.Context, userID int) (*cartv1.Cart, error) {
+func (c *Client) GetCart(ctx context.Context, userID int64) (*cartv1.Cart, error) {
 	const op = "grpc.GetCart"
 
 	md := metadata.New(map[string]string{
@@ -85,7 +94,7 @@ func (c *Client) GetCart(ctx context.Context, userID int) (*cartv1.Cart, error) 
 	return resp.GetCart(), nil
 }
 
-func (c *Client) UpdateCartItemQuantity(ctx context.Context, userID int, itemID string, quantity int32) error {
+func (c *Client) UpdateCartItemQuantity(ctx context.Context, userID int64, itemID string, quantity int32) error {
 	const op = "grpc.UpdateCartItemQuantity"
 
 	md := metadata.New(map[string]string{
@@ -104,7 +113,7 @@ func (c *Client) UpdateCartItemQuantity(ctx context.Context, userID int, itemID 
 	return nil
 }
 
-func (c *Client) RemoveFromCart(ctx context.Context, userID int, itemID string) error {
+func (c *Client) RemoveFromCart(ctx context.Context, userID int64, itemID string) error {
 	const op = "grpc.RemoveFromCart"
 
 	md := metadata.New(map[string]string{
@@ -122,7 +131,7 @@ func (c *Client) RemoveFromCart(ctx context.Context, userID int, itemID string) 
 	return nil
 }
 
-func (c *Client) ClearCart(ctx context.Context, userID int) error {
+func (c *Client) ClearCart(ctx context.Context, userID int64) error {
 	const op = "grpc.ClearCart"
 
 	md := metadata.New(map[string]string{
@@ -138,8 +147,34 @@ func (c *Client) ClearCart(ctx context.Context, userID int) error {
 	return nil
 }
 
+// deadlineInterceptor добавляет общий таймаут к каждому gRPC-вызову
+func deadlineInterceptor(timeout time.Duration) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
 func InterceptorLogger(l *slog.Logger) grpclog.Logger {
 	return grpclog.LoggerFunc(func(ctx context.Context, level grpclog.Level, msg string, fields ...any) {
 		l.Log(ctx, slog.Level(level), msg, fields...)
 	})
+}
+
+// requestIDInterceptor пробрасывает request_id из контекста в gRPC-метаданные
+func requestIDInterceptor() grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if rid := middleware.RequestIDFromContext(ctx); rid != "" {
+			md, ok := metadata.FromOutgoingContext(ctx)
+			if ok {
+				md = md.Copy()
+			} else {
+				md = metadata.New(nil)
+			}
+			md.Set("request_id", rid)
+			ctx = metadata.NewOutgoingContext(ctx, md)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }

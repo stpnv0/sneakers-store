@@ -6,17 +6,21 @@ import (
 	"log/slog"
 	"time"
 
+	"api_gateway/internal/middleware"
+
 	grpclog "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
 	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	productv1 "github.com/stpnv0/protos/gen/go/product"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 )
 
 type Client struct {
-	api productv1.ProductClient
-	log *slog.Logger
+	api  productv1.ProductClient
+	conn *grpc.ClientConn
+	log  *slog.Logger
 }
 
 func New(ctx context.Context, log *slog.Logger, addr string, timeout time.Duration, retriesCount int) (*Client, error) {
@@ -28,14 +32,15 @@ func New(ctx context.Context, log *slog.Logger, addr string, timeout time.Durati
 		grpcretry.WithPerRetryTimeout(timeout),
 	}
 
-	logOpts := []grpclog.Option{
-		grpclog.WithLogOnEvents(grpclog.PayloadReceived, grpclog.PayloadSent),
-	}
+	// Общий таймаут вызова: (кол-во попыток * таймаут на попытку) + запас.
+	callTimeout := timeout*time.Duration(retriesCount) + 2*time.Second
 
 	cc, err := grpc.DialContext(ctx, addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
 		grpc.WithChainUnaryInterceptor(
-			grpclog.UnaryClientInterceptor(InterceptorLogger(log), logOpts...),
+			requestIDInterceptor(),
+			deadlineInterceptor(callTimeout),
+			grpclog.UnaryClientInterceptor(InterceptorLogger(log)),
 			grpcretry.UnaryClientInterceptor(retryOpts...),
 		),
 	)
@@ -44,15 +49,47 @@ func New(ctx context.Context, log *slog.Logger, addr string, timeout time.Durati
 	}
 
 	return &Client{
-		api: productv1.NewProductClient(cc),
-		log: log,
+		api:  productv1.NewProductClient(cc),
+		conn: cc,
+		log:  log,
 	}, nil
+}
+
+// Close закрывает базовое gRPC-соединение.
+func (c *Client) Close() error {
+	return c.conn.Close()
+}
+
+// deadlineInterceptor добавляет общий таймаут к каждому gRPC-вызову.
+func deadlineInterceptor(timeout time.Duration) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }
 
 func InterceptorLogger(l *slog.Logger) grpclog.Logger {
 	return grpclog.LoggerFunc(func(ctx context.Context, level grpclog.Level, msg string, fields ...any) {
 		l.Log(ctx, slog.Level(level), msg, fields...)
 	})
+}
+
+// requestIDInterceptor пробрасывает request_id из контекста в gRPC-метаданные.
+func requestIDInterceptor() grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if rid := middleware.RequestIDFromContext(ctx); rid != "" {
+			md, ok := metadata.FromOutgoingContext(ctx)
+			if ok {
+				md = md.Copy()
+			} else {
+				md = metadata.New(nil)
+			}
+			md.Set("request_id", rid)
+			ctx = metadata.NewOutgoingContext(ctx, md)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
 }
 
 func (c *Client) GetAllSneakers(ctx context.Context, limit, offset uint64) ([]*productv1.Sneaker, error) {
@@ -84,12 +121,12 @@ func (c *Client) GetSneakerByID(ctx context.Context, id int64) (*productv1.Sneak
 	return resp, nil
 }
 
-func (c *Client) AddSneaker(ctx context.Context, title string, price float32) (*productv1.Sneaker, error) {
+func (c *Client) AddSneaker(ctx context.Context, title string, priceKopecks int64) (*productv1.Sneaker, error) {
 	const op = "product.AddSneaker"
 
 	req := &productv1.AddSneakerRequest{
-		Title: title,
-		Price: price,
+		Title:        title,
+		PriceKopecks: priceKopecks,
 	}
 	resp, err := c.api.AddSneaker(ctx, req)
 	if err != nil {

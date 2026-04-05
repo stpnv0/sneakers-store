@@ -6,8 +6,10 @@ import (
 	"log/slog"
 	"time"
 
-	grpc_middleware "github.com/grpc-ecosystem/go-grpc-middleware"
-	grpc_retry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
+	"api_gateway/internal/middleware"
+
+	grpclog "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/logging"
+	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/retry"
 	favv1 "github.com/stpnv0/protos/gen/go/favourites"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -16,8 +18,9 @@ import (
 )
 
 type Client struct {
-	api favv1.FavouritesServiceClient
-	log *slog.Logger
+	api  favv1.FavouritesServiceClient
+	conn *grpc.ClientConn
+	log  *slog.Logger
 }
 
 func New(
@@ -29,44 +32,87 @@ func New(
 ) (*Client, error) {
 	const op = "favourites.grpc.New"
 
-	retryOpts := []grpc_retry.CallOption{
-		grpc_retry.WithCodes(codes.NotFound, codes.Aborted, codes.DeadlineExceeded),
-		grpc_retry.WithMax(uint(retriesCount)),
-		grpc_retry.WithPerRetryTimeout(timeout),
+	retryOpts := []grpcretry.CallOption{
+		grpcretry.WithCodes(codes.Aborted, codes.DeadlineExceeded, codes.Unavailable),
+		grpcretry.WithMax(uint(retriesCount)),
+		grpcretry.WithPerRetryTimeout(timeout),
 	}
 
-	logOpts := []grpc_retry.CallOption{
-		grpc_retry.WithCodes(codes.NotFound, codes.Aborted, codes.DeadlineExceeded),
-	}
+	// Общий таймаут вызова: (кол-во попыток * таймаут на попытку) + запас.
+	callTimeout := timeout*time.Duration(retriesCount) + 2*time.Second
 
 	cc, err := grpc.DialContext(ctx, addr,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithUnaryInterceptor(grpc_middleware.ChainUnaryClient(
-			grpc_retry.UnaryClientInterceptor(retryOpts...),
-			grpc_retry.UnaryClientInterceptor(logOpts...),
-		)),
+		grpc.WithChainUnaryInterceptor(
+			requestIDInterceptor(),
+			deadlineInterceptor(callTimeout),
+			grpclog.UnaryClientInterceptor(InterceptorLogger(log)),
+			grpcretry.UnaryClientInterceptor(retryOpts...),
+		),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
 	return &Client{
-		api: favv1.NewFavouritesServiceClient(cc),
-		log: log,
+		api:  favv1.NewFavouritesServiceClient(cc),
+		conn: cc,
+		log:  log,
 	}, nil
 }
 
-func (c *Client) AddToFavourites(ctx context.Context, userID, sneakerID int) error {
+// Close закрывает базовое gRPC-соединение.
+func (c *Client) Close() error {
+	return c.conn.Close()
+}
+
+// deadlineInterceptor добавляет общий таймаут к каждому gRPC-вызову.
+func deadlineInterceptor(timeout time.Duration) grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		ctx, cancel := context.WithTimeout(ctx, timeout)
+		defer cancel()
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+func InterceptorLogger(l *slog.Logger) grpclog.Logger {
+	return grpclog.LoggerFunc(func(ctx context.Context, level grpclog.Level, msg string, fields ...any) {
+		l.Log(ctx, slog.Level(level), msg, fields...)
+	})
+}
+
+// requestIDInterceptor пробрасывает request_id из контекста в gRPC-метаданные.
+func requestIDInterceptor() grpc.UnaryClientInterceptor {
+	return func(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+		if rid := middleware.RequestIDFromContext(ctx); rid != "" {
+			md, ok := metadata.FromOutgoingContext(ctx)
+			if ok {
+				md = md.Copy()
+			} else {
+				md = metadata.New(nil)
+			}
+			md.Set("request_id", rid)
+			ctx = metadata.NewOutgoingContext(ctx, md)
+		}
+		return invoker(ctx, method, req, reply, cc, opts...)
+	}
+}
+
+// attachUserMD добавляет user_id в gRPC-метаданные.
+func attachUserMD(ctx context.Context, userID int64) context.Context {
+	md := metadata.New(map[string]string{
+		"user_id": fmt.Sprintf("%d", userID),
+	})
+	return metadata.NewOutgoingContext(ctx, md)
+}
+
+func (c *Client) AddToFavourites(ctx context.Context, userID, sneakerID int64) error {
 	const op = "favourites.grpc.AddToFavourites"
 
-	md := metadata.New(map[string]string{
-		"user_id": fmt.Sprintf("%d", userID),
-	})
-	ctx = metadata.NewOutgoingContext(ctx, md)
+	ctx = attachUserMD(ctx, userID)
 
 	_, err := c.api.AddToFavourites(ctx, &favv1.AddToFavouritesRequest{
-		UserId:    int32(userID),
-		SneakerId: int32(sneakerID),
+		SneakerId: sneakerID,
 	})
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
@@ -75,17 +121,13 @@ func (c *Client) AddToFavourites(ctx context.Context, userID, sneakerID int) err
 	return nil
 }
 
-func (c *Client) RemoveFromFavourites(ctx context.Context, userID, sneakerID int) error {
+func (c *Client) RemoveFromFavourites(ctx context.Context, userID, sneakerID int64) error {
 	const op = "favourites.grpc.RemoveFromFavourites"
 
-	md := metadata.New(map[string]string{
-		"user_id": fmt.Sprintf("%d", userID),
-	})
-	ctx = metadata.NewOutgoingContext(ctx, md)
+	ctx = attachUserMD(ctx, userID)
 
 	_, err := c.api.RemoveFromFavourites(ctx, &favv1.RemoveFromFavouritesRequest{
-		UserId:    int32(userID),
-		SneakerId: int32(sneakerID),
+		SneakerId: sneakerID,
 	})
 	if err != nil {
 		return fmt.Errorf("%s: %w", op, err)
@@ -94,17 +136,12 @@ func (c *Client) RemoveFromFavourites(ctx context.Context, userID, sneakerID int
 	return nil
 }
 
-func (c *Client) GetFavourites(ctx context.Context, userID int) ([]*favv1.FavouriteItem, error) {
+func (c *Client) GetFavourites(ctx context.Context, userID int64) ([]*favv1.FavouriteItem, error) {
 	const op = "favourites.grpc.GetFavourites"
 
-	md := metadata.New(map[string]string{
-		"user_id": fmt.Sprintf("%d", userID),
-	})
-	ctx = metadata.NewOutgoingContext(ctx, md)
+	ctx = attachUserMD(ctx, userID)
 
-	resp, err := c.api.GetFavourites(ctx, &favv1.GetFavouritesRequest{
-		UserId: int32(userID),
-	})
+	resp, err := c.api.GetFavourites(ctx, &favv1.GetFavouritesRequest{})
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
@@ -112,17 +149,13 @@ func (c *Client) GetFavourites(ctx context.Context, userID int) ([]*favv1.Favour
 	return resp.Items, nil
 }
 
-func (c *Client) IsFavourite(ctx context.Context, userID, sneakerID int) (bool, error) {
+func (c *Client) IsFavourite(ctx context.Context, userID, sneakerID int64) (bool, error) {
 	const op = "favourites.grpc.IsFavourite"
 
-	md := metadata.New(map[string]string{
-		"user_id": fmt.Sprintf("%d", userID),
-	})
-	ctx = metadata.NewOutgoingContext(ctx, md)
+	ctx = attachUserMD(ctx, userID)
 
 	resp, err := c.api.IsFavourite(ctx, &favv1.IsFavouriteRequest{
-		UserId:    int32(userID),
-		SneakerId: int32(sneakerID),
+		SneakerId: sneakerID,
 	})
 	if err != nil {
 		return false, fmt.Errorf("%s: %w", op, err)
