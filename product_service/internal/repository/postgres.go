@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	domain "product_service/internal/domain/model"
+	"product_service/internal/model"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -22,7 +22,7 @@ func New(db *pgxpool.Pool) *PostgresRepo {
 	}
 }
 
-func (r *PostgresRepo) GetAllSneakers(ctx context.Context, limit, offset uint64) ([]*domain.Sneaker, error) {
+func (r *PostgresRepo) GetAllSneakers(ctx context.Context, limit, offset uint64) ([]*model.Sneaker, error) {
 	query := "SELECT id, title, price, image_key FROM sneakers ORDER BY id LIMIT $1 OFFSET $2"
 
 	rows, err := r.db.Query(ctx, query, limit, offset)
@@ -31,7 +31,7 @@ func (r *PostgresRepo) GetAllSneakers(ctx context.Context, limit, offset uint64)
 	}
 	defer rows.Close()
 
-	sneakers, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[domain.Sneaker])
+	sneakers, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.Sneaker])
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect sneaker rows: %w", err)
 	}
@@ -39,7 +39,7 @@ func (r *PostgresRepo) GetAllSneakers(ctx context.Context, limit, offset uint64)
 	return sneakers, nil
 }
 
-func (r *PostgresRepo) AddSneaker(ctx context.Context, sneaker *domain.Sneaker) (int64, error) {
+func (r *PostgresRepo) AddSneaker(ctx context.Context, sneaker *model.Sneaker) (int64, error) {
 	query := "INSERT INTO sneakers (title, price, image_key) VALUES ($1, $2, $3) RETURNING id"
 
 	var id int64
@@ -51,12 +51,12 @@ func (r *PostgresRepo) AddSneaker(ctx context.Context, sneaker *domain.Sneaker) 
 	return id, nil
 }
 
-func (r *PostgresRepo) GetSneakerByID(ctx context.Context, id int64) (*domain.Sneaker, error) {
+func (r *PostgresRepo) GetSneakerByID(ctx context.Context, id int64) (*model.Sneaker, error) {
 	query := "SELECT id, title, price, image_key from sneakers WHERE id = $1"
 
 	row := r.db.QueryRow(ctx, query, id)
 
-	var s domain.Sneaker
+	var s model.Sneaker
 	err := row.Scan(&s.Id, &s.Title, &s.Price, &s.ImageKey)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -68,9 +68,9 @@ func (r *PostgresRepo) GetSneakerByID(ctx context.Context, id int64) (*domain.Sn
 	return &s, nil
 }
 
-func (r *PostgresRepo) GetSneakersByIDs(ctx context.Context, ids []int64) ([]*domain.Sneaker, error) {
+func (r *PostgresRepo) GetSneakersByIDs(ctx context.Context, ids []int64) ([]*model.Sneaker, error) {
 	if len(ids) == 0 {
-		return []*domain.Sneaker{}, nil
+		return []*model.Sneaker{}, nil
 	}
 	query := "SELECT id, title, price, image_key from sneakers WHERE id = ANY($1)"
 
@@ -79,7 +79,7 @@ func (r *PostgresRepo) GetSneakersByIDs(ctx context.Context, ids []int64) ([]*do
 		return nil, fmt.Errorf("failed to query sneakers by ids: %w", err)
 	}
 
-	sneakers, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[domain.Sneaker])
+	sneakers, err := pgx.CollectRows(rows, pgx.RowToAddrOfStructByName[model.Sneaker])
 	if err != nil {
 		return nil, fmt.Errorf("failed to collect sneaker rows: %w", err)
 	}

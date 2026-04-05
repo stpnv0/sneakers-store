@@ -1,0 +1,15 @@
+dir: '{{.InterfaceDir}}/mocks'
+structname: Mock{{.InterfaceName}}
+pkgname: mocks
+template: testify
+template-data:
+  unroll-variadic: true
+packages:
+  product_service/internal/app:
+    interfaces:
+      FileStore: {}
+      ProductCache: {}
+      ProductPostgres: {}
+  product_service/internal/grpc/product:
+    interfaces:
+      App: {}

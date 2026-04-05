@@ -10,15 +10,15 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
-	domain "product_service/internal/domain/model"
+	"product_service/internal/model"
 	"product_service/internal/repository"
 )
 
 type App interface {
-	GetSneakerByID(ctx context.Context, id int64) (*domain.Sneaker, error)
-	AddSneaker(ctx context.Context, sneaker *domain.Sneaker) (int64, error)
-	GetAllSneakers(ctx context.Context, limit, offset uint64) ([]*domain.Sneaker, error)
-	GetSneakersByIDs(ctx context.Context, ids []int64) ([]*domain.Sneaker, error) // Новый в интерфейсе
+	GetSneakerByID(ctx context.Context, id int64) (*model.Sneaker, error)
+	AddSneaker(ctx context.Context, sneaker *model.Sneaker) (int64, error)
+	GetAllSneakers(ctx context.Context, limit, offset uint64) ([]*model.Sneaker, error)
+	GetSneakersByIDs(ctx context.Context, ids []int64) ([]*model.Sneaker, error) // Новый в интерфейсе
 	DeleteSneaker(ctx context.Context, id int64) error
 	GenerateUploadURL(ctx context.Context, originalFilename string, contentType string) (uploadURL string, fileKey string, err error)
 	UpdateProductImage(ctx context.Context, productID int64, imageKey string) error
@@ -51,19 +51,19 @@ func (s *serverAPI) AddSneaker(ctx context.Context, req *pb.AddSneakerRequest) (
 	if req.GetTitle() == "" {
 		return nil, status.Error(codes.InvalidArgument, "title is required")
 	}
-	if req.GetPrice() <= 0 {
+	if req.GetPriceKopecks() <= 0 {
 		return nil, status.Error(codes.InvalidArgument, "price must be positive")
 	}
 
-	id, err := s.app.AddSneaker(ctx, &domain.Sneaker{
+	id, err := s.app.AddSneaker(ctx, &model.Sneaker{
 		Title: req.GetTitle(),
-		Price: req.GetPrice(),
+		Price: req.GetPriceKopecks(),
 	})
 	if err != nil {
 		s.log.Error("failed to add sneaker", slog.String("error", err.Error()))
 		return nil, status.Error(codes.Internal, "internal error")
 	}
-	return &pb.Sneaker{Id: id, Title: req.GetTitle(), Price: req.GetPrice(), ImageKey: ""}, nil
+	return &pb.Sneaker{Id: id, Title: req.GetTitle(), PriceKopecks: req.GetPriceKopecks(), ImageKey: ""}, nil
 }
 
 func (s *serverAPI) GenerateUploadURL(ctx context.Context, req *pb.GenerateUploadURLRequest) (*pb.GenerateUploadURLResponse, error) {
@@ -136,11 +136,11 @@ func (s *serverAPI) DeleteSneaker(ctx context.Context, req *pb.DeleteSneakerRequ
 	return &emptypb.Empty{}, nil
 }
 
-func toProtoSneaker(sneaker *domain.Sneaker) *pb.Sneaker {
+func toProtoSneaker(sneaker *model.Sneaker) *pb.Sneaker {
 	return &pb.Sneaker{
-		Id:       sneaker.Id,
-		Title:    sneaker.Title,
-		Price:    sneaker.Price,
-		ImageKey: sneaker.ImageKey,
+		Id:           sneaker.Id,
+		Title:        sneaker.Title,
+		PriceKopecks: sneaker.Price,
+		ImageKey:     sneaker.ImageKey,
 	}
 }

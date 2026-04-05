@@ -1,8 +1,8 @@
-package domain
+package model
 
 type Sneaker struct {
 	Id       int64
 	Title    string
-	Price    float32
+	Price    int64
 	ImageKey string
 }

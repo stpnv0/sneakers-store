@@ -1,3 +1,4 @@
+-- +goose Up
 CREATE TABLE IF NOT EXISTS sneakers (
     id BIGSERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
@@ -6,3 +7,6 @@ CREATE TABLE IF NOT EXISTS sneakers (
 );
 
 CREATE INDEX IF NOT EXISTS idx_sneakers_title ON sneakers (title);
+
+-- +goose Down
+DROP TABLE IF EXISTS sneakers;

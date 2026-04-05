@@ -1,7 +1,7 @@
 package config
 
 import (
-	"log"
+	"fmt"
 	"os"
 	"time"
 
@@ -32,6 +32,13 @@ type DBConfig struct {
 	User     string `yaml:"user" env:"DB_USER"`
 	Password string `yaml:"password" env:"DB_PASSWORD"`
 	DBName   string `yaml:"dbname" env:"DB_NAME"`
+	MaxConns int32  `yaml:"max_conns" env:"DB_MAX_CONNS" env-default:"25"`
+	MinConns int32  `yaml:"min_conns" env:"DB_MIN_CONNS" env-default:"5"`
+}
+
+func (d DBConfig) DSN() string {
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
+		d.User, d.Password, d.Host, d.Port, d.DBName)
 }
 
 type S3Config struct {
@@ -41,21 +48,21 @@ type S3Config struct {
 	Bucket    string `yaml:"bucket" env:"S3_BUCKET"`
 }
 
-func MustLoad() *Config {
+// Load читает конфигурацию из файла и возвращает её, или ошибку при неудаче.
+func Load() (*Config, error) {
 	configPath := os.Getenv("CONFIG_PATH")
 	if configPath == "" {
 		configPath = "./config/local.yaml"
 	}
 
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
-		log.Fatalf("config file does not exist: %s", configPath)
+		return nil, fmt.Errorf("config file does not exist: %s", configPath)
 	}
 
 	var cfg Config
-
 	if err := cleanenv.ReadConfig(configPath, &cfg); err != nil {
-		log.Fatalf("cannot read config: %s", err)
+		return nil, fmt.Errorf("read config: %w", err)
 	}
 
-	return &cfg
+	return &cfg, nil
 }

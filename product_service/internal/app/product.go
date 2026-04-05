@@ -6,12 +6,18 @@ import (
 	"fmt"
 	"log/slog"
 	"path"
-	domain "product_service/internal/domain/model"
+	"regexp"
+	"strings"
+
+	"product_service/internal/model"
 	"product_service/internal/repository"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// validImageKeyRe соответствует ключам вида "products/<uuid>.<ext>" или "products/<num>.jpg".
+var validImageKeyRe = regexp.MustCompile(`^products/[a-zA-Z0-9_-]+\.[a-zA-Z0-9]+$`)
 
 type Service struct {
 	repo      ProductPostgres
@@ -39,13 +45,13 @@ func productsKeyL2(limit, offset uint64) string {
 	return fmt.Sprintf("products:list:limit:%d:offset:%d", limit, offset)
 }
 
-func (s *Service) GetSneakerByID(ctx context.Context, id int64) (*domain.Sneaker, error) {
+func (s *Service) GetSneakerByID(ctx context.Context, id int64) (*model.Sneaker, error) {
 	const op = "app.Service.GetSneakerByID"
 	log := s.log.With(slog.String("op", op), slog.Int64("id", id))
 
 	//cache
 	key := productKeyL1(id)
-	var cachedSneaker domain.Sneaker
+	var cachedSneaker model.Sneaker
 	err := s.cache.Get(ctx, key, &cachedSneaker)
 	if err == nil {
 		log.Info("cache hit")
@@ -88,16 +94,15 @@ func (s *Service) DeleteSneaker(ctx context.Context, id int64) error {
 		log.Error("failed to invalidate L1 cache", slog.String("error", err.Error()))
 	}
 
-	// Invalidate L2 Cache
-	listKey := productsKeyL2(20, 0)
-	if err := s.cache.Delete(ctx, listKey); err != nil && !errors.Is(err, repository.ErrNotFound) {
+	// Invalidate L2 Cache (все варианты пагинации)
+	if err := s.cache.DeleteByPrefix(ctx, "products:list:"); err != nil {
 		log.Error("failed to invalidate L2 cache", slog.String("error", err.Error()))
 	}
 
 	return nil
 }
 
-func (s *Service) GetSneakersByIDs(ctx context.Context, ids []int64) ([]*domain.Sneaker, error) {
+func (s *Service) GetSneakersByIDs(ctx context.Context, ids []int64) ([]*model.Sneaker, error) {
 	const op = "app.Service.GetSneakersByIDs"
 	log := s.log.With(slog.String("op", op))
 
@@ -110,13 +115,13 @@ func (s *Service) GetSneakersByIDs(ctx context.Context, ids []int64) ([]*domain.
 	return sneakers, nil
 }
 
-func (s *Service) GetAllSneakers(ctx context.Context, limit, offset uint64) ([]*domain.Sneaker, error) {
+func (s *Service) GetAllSneakers(ctx context.Context, limit, offset uint64) ([]*model.Sneaker, error) {
 	const op = "app.Service.GetAllSneakers"
 	log := s.log.With(slog.String("op", op))
 
 	// Cache
 	key := productsKeyL2(limit, offset)
-	var cachedSneakers []*domain.Sneaker
+	var cachedSneakers []*model.Sneaker
 	err := s.cache.Get(ctx, key, &cachedSneakers)
 	if err == nil {
 		log.Info("list cache hit")
@@ -141,7 +146,7 @@ func (s *Service) GetAllSneakers(ctx context.Context, limit, offset uint64) ([]*
 	return dbSneakers, nil
 }
 
-func (s *Service) AddSneaker(ctx context.Context, sneaker *domain.Sneaker) (int64, error) {
+func (s *Service) AddSneaker(ctx context.Context, sneaker *model.Sneaker) (int64, error) {
 	const op = "app.Service.AddSneaker"
 	log := s.log.With(slog.String("op", op))
 
@@ -156,9 +161,8 @@ func (s *Service) AddSneaker(ctx context.Context, sneaker *domain.Sneaker) (int6
 	log.Info("sneaker added", slog.Int64("id", id))
 
 	//invalidate L2 cache
-	listKey := productsKeyL2(20, 0)
-	if delErr := s.cache.Delete(ctx, listKey); delErr != nil && !errors.Is(delErr, repository.ErrNotFound) {
-		log.Error("failed to invalidate list cache", slog.String("key", listKey), slog.String("error", delErr.Error()))
+	if delErr := s.cache.DeleteByPrefix(ctx, "products:list:"); delErr != nil {
+		log.Error("failed to invalidate list cache", slog.String("error", delErr.Error()))
 	}
 
 	return id, nil
@@ -182,9 +186,27 @@ func (s *Service) GenerateUploadURL(ctx context.Context, originalFilename string
 	return uploadURL, key, nil
 }
 
+// ValidateImageKey проверяет, что ключ изображения имеет ожидаемый формат.
+func ValidateImageKey(key string) error {
+	if !strings.HasPrefix(key, "products/") {
+		return fmt.Errorf("image key must start with 'products/'")
+	}
+	if len(key) > 256 {
+		return fmt.Errorf("image key too long (max 256 chars)")
+	}
+	if !validImageKeyRe.MatchString(key) {
+		return fmt.Errorf("image key contains invalid characters")
+	}
+	return nil
+}
+
 func (s *Service) UpdateProductImage(ctx context.Context, productID int64, imageKey string) error {
 	const op = "app.Service.UpdateProductImage"
 	log := s.log.With(slog.String("op", op), slog.Int64("productID", productID))
+
+	if err := ValidateImageKey(imageKey); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
 
 	err := s.repo.UpdateImageKey(ctx, productID, imageKey)
 	if err != nil {
@@ -194,6 +216,9 @@ func (s *Service) UpdateProductImage(ctx context.Context, productID int64, image
 
 	if err := s.cache.Delete(ctx, productKeyL1(productID)); err != nil && !errors.Is(err, repository.ErrNotFound) {
 		log.Warn("failed to invalidate L1 cache for product", slog.String("error", err.Error()))
+	}
+	if err := s.cache.DeleteByPrefix(ctx, "products:list:"); err != nil {
+		log.Warn("failed to invalidate L2 cache", slog.String("error", err.Error()))
 	}
 
 	log.Info("product image updated successfully", slog.String("imageKey", imageKey))

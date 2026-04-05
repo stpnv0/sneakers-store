@@ -8,12 +8,12 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"product_service/internal/app"
 	"product_service/internal/config"
 	grpc_handler "product_service/internal/grpc/product"
 	"product_service/internal/repository"
-	migration "product_service/internal/storage"
 
 	"github.com/go-redis/redis/v8"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -21,74 +21,107 @@ import (
 )
 
 func main() {
-	cfg := config.MustLoad()
-	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})).With(slog.String("service", "product"))
-	log.Info("starting service", slog.String("env", cfg.Env))
-
-	migration.RunMigrations(cfg)
-
-	// Инициализация зависимостей
-	dbPool := mustInitDB(cfg)
-	log.Info("migrations applied successfully")
-	redisClient := mustInitRedis(cfg)
-	fileStoreRepo, err := repository.NewFileStoreRepository(context.Background(), cfg, log)
-	if err != nil {
-		log.Error("failed to init file store", slog.String("error", err.Error()))
+	if err := run(); err != nil {
+		slog.Error("fatal error", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
+}
 
-	// Инициализация репозиториев
+func run() error {
+	log := setupLogger("product_service")
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("load config: %w", err)
+	}
+	log.Info("starting service", slog.String("env", cfg.Env))
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// PostgreSQL
+	poolConfig, err := pgxpool.ParseConfig(cfg.DB.DSN())
+	if err != nil {
+		return fmt.Errorf("parse db config: %w", err)
+	}
+	poolConfig.MaxConns = cfg.DB.MaxConns
+	poolConfig.MinConns = cfg.DB.MinConns
+	poolConfig.MaxConnLifetime = 5 * time.Minute
+	poolConfig.HealthCheckPeriod = 30 * time.Second
+	dbPool, err := pgxpool.NewWithConfig(ctx, poolConfig)
+	if err != nil {
+		return fmt.Errorf("connect to db: %w", err)
+	}
+	if err := dbPool.Ping(ctx); err != nil {
+		dbPool.Close()
+		return fmt.Errorf("ping db: %w", err)
+	}
+	defer dbPool.Close()
+	log.Info("connected to postgres")
+
+	// Redis
+	redisClient := redis.NewClient(&redis.Options{Addr: cfg.Redis.Addr})
+	defer redisClient.Close()
+	if _, err := redisClient.Ping(ctx).Result(); err != nil {
+		return fmt.Errorf("connect to redis: %w", err)
+	}
+	log.Info("connected to redis")
+
+	// S3 / MinIO
+	fileStoreRepo, err := repository.NewFileStoreRepository(ctx, cfg, log)
+	if err != nil {
+		return fmt.Errorf("init file store: %w", err)
+	}
+
+	// Репозитории
 	postgresRepo := repository.New(dbPool)
 	redisRepo := repository.NewRedisRepository(redisClient)
 
-	// Инициализация сервисного слоя
+	// Сервисный слой
 	productService := app.NewService(postgresRepo, redisRepo, fileStoreRepo, log, cfg.CacheTTL)
 
-	// Инициализация и запуск gRPC сервера
+	// gRPC-сервер
 	grpcServer := grpc.NewServer()
 	grpc_handler.Register(grpcServer, productService, log)
 
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.GRPC.Port))
 	if err != nil {
-		log.Error("failed to listen", slog.String("error", err.Error()))
-		os.Exit(1)
+		return fmt.Errorf("listen: %w", err)
 	}
 
-	log.Info("gRPC server started", slog.Int("port", cfg.GRPC.Port))
-
+	errCh := make(chan error, 1)
 	go func() {
+		log.Info("gRPC server started", slog.Int("port", cfg.GRPC.Port))
 		if err := grpcServer.Serve(lis); err != nil {
-			log.Error("gRPC server failed", slog.String("error", err.Error()))
-			os.Exit(1)
+			errCh <- err
 		}
 	}()
 
-	// Graceful shutdown
-	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGTERM, syscall.SIGINT)
-	<-stop
+	// Ожидание сигнала завершения или ошибки сервера
+	select {
+	case <-ctx.Done():
+		log.Info("shutdown signal received")
+	case err := <-errCh:
+		log.Error("gRPC server failed", slog.String("error", err.Error()))
+		stop()
+	}
 
-	log.Info("shutting down gRPC server")
 	grpcServer.GracefulStop()
-	log.Info("server stopped")
+	log.Info("product service stopped")
+	return nil
 }
 
-func mustInitDB(cfg *config.Config) *pgxpool.Pool {
-	connString := fmt.Sprintf("postgres://%s:%s@%s:%d/%s", cfg.DB.User, cfg.DB.Password, cfg.DB.Host, cfg.DB.Port, cfg.DB.DBName)
-	db, err := pgxpool.New(context.Background(), connString)
-	if err != nil {
-		panic("failed to connect to db: " + err.Error())
-	}
-	if err := db.Ping(context.Background()); err != nil {
-		panic("failed to ping db: " + err.Error())
-	}
-	return db
-}
+func setupLogger(serviceName string) *slog.Logger {
+	env := os.Getenv("ENV")
 
-func mustInitRedis(cfg *config.Config) *redis.Client {
-	client := redis.NewClient(&redis.Options{Addr: cfg.Redis.Addr})
-	if _, err := client.Ping(context.Background()).Result(); err != nil {
-		panic("failed to connect to redis: " + err.Error())
+	var level slog.Level
+	switch env {
+	case "prod":
+		level = slog.LevelInfo
+	default:
+		level = slog.LevelDebug
 	}
-	return client
+
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})).
+		With(slog.String("service", serviceName))
 }

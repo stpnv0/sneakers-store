@@ -51,3 +51,24 @@ func (r *RedisRepository) Delete(ctx context.Context, key string) error {
 	}
 	return err
 }
+
+// DeleteByPrefix removes all keys matching the given prefix using SCAN + DEL.
+func (r *RedisRepository) DeleteByPrefix(ctx context.Context, prefix string) error {
+	var cursor uint64
+	for {
+		keys, nextCursor, err := r.client.Scan(ctx, cursor, prefix+"*", 100).Result()
+		if err != nil {
+			return fmt.Errorf("scan keys with prefix %q: %w", prefix, err)
+		}
+		if len(keys) > 0 {
+			if err := r.client.Del(ctx, keys...).Err(); err != nil {
+				return fmt.Errorf("delete keys with prefix %q: %w", prefix, err)
+			}
+		}
+		cursor = nextCursor
+		if cursor == 0 {
+			break
+		}
+	}
+	return nil
+}

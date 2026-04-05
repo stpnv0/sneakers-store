@@ -7,11 +7,12 @@ import (
 	"strings"
 	"time"
 
+	cfg_pkg "product_service/internal/config"
+
 	"github.com/aws/aws-sdk-go-v2/aws"
 	aws_config "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	cfg_pkg "product_service/internal/config"
 )
 
 type FileStoreRepository struct {
@@ -46,10 +47,15 @@ func NewFileStoreRepository(ctx context.Context, config *cfg_pkg.Config, log *sl
 		o.UsePathStyle = true
 	})
 
+	bucketName := config.S3.Bucket
+	if bucketName == "" {
+		bucketName = "products"
+	}
+
 	repo := &FileStoreRepository{
 		s3Client:      s3Client,
 		presignClient: s3.NewPresignClient(s3Client),
-		bucketName:    "sneakers", // Можно вынести в конфиг
+		bucketName:    bucketName,
 		log:           log,
 	}
 
