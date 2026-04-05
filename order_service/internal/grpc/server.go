@@ -14,6 +14,19 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+type contextKey string
+
+const userIDKey contextKey = "user_id"
+
+func UserIDFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(userIDKey).(string)
+	return v
+}
+
+func ContextWithUserID(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, userIDKey, userID)
+}
+
 type Server struct {
 	grpcServer *grpc.Server
 	log        *slog.Logger
@@ -41,14 +54,14 @@ func NewServer(log *slog.Logger) *Server {
 	}
 }
 
-func (s *Server) GetGRPCServer() *grpc.Server {
+func (s *Server) GRPCServer() *grpc.Server {
 	return s.grpcServer
 }
 
 func (s *Server) Run(port int) error {
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
-		return fmt.Errorf("failed to listen: %w", err)
+		return fmt.Errorf("grpc server: listen: %w", err)
 	}
 
 	s.log.Info("grpc server started", slog.Int("port", port))
@@ -62,20 +75,41 @@ func (s *Server) Stop() {
 
 func loggingInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
-		log.Info("gRPC request", slog.String("method", info.FullMethod))
+		rid := requestIDFromMD(ctx)
+
+		log.Info("grpc request",
+			slog.String("method", info.FullMethod),
+			slog.String("request_id", rid),
+		)
 		resp, err := handler(ctx, req)
 		if err != nil {
-			log.Error("gRPC error", slog.String("method", info.FullMethod), slog.String("error", err.Error()))
+			log.Error("grpc error",
+				slog.String("method", info.FullMethod),
+				slog.String("request_id", rid),
+				slog.String("error", err.Error()),
+			)
 		}
 		return resp, err
 	}
 }
 
-func userContextInterceptor(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
+func requestIDFromMD(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	vals := md.Get("request_id")
+	if len(vals) == 0 {
+		return ""
+	}
+	return vals[0]
+}
+
+func userContextInterceptor(ctx context.Context, req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (interface{}, error) {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if ok {
 		if userIDs := md.Get("user_id"); len(userIDs) > 0 {
-			ctx = context.WithValue(ctx, "user_id", userIDs[0])
+			ctx = context.WithValue(ctx, userIDKey, userIDs[0])
 		}
 	}
 	return handler(ctx, req)

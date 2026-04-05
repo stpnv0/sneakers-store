@@ -1,0 +1,13 @@
+dir: '{{.InterfaceDir}}/mocks'
+pkgname: mocks
+template: testify
+template-data:
+  unroll-variadic: true
+packages:
+  order_service/internal/grpc/order:
+    interfaces:
+      Service: {}
+  order_service/internal/service:
+    interfaces:
+      EventPublisher: {}
+      OrderRepository: {}
