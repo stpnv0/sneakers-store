@@ -1,33 +1,33 @@
 package services
 
 import (
-	"cart_service/internal/models"
-	"cart_service/internal/repository"
 	"context"
 	"fmt"
 	"log/slog"
 	"time"
+
+	"cart_service/internal/models"
 )
 
 // CartCacheAsideService реализует паттерн Cache-Aside для работы с корзиной
 type CartCacheAsideService struct {
-	pgRepo    *repository.PostgresRepository
-	redisRepo *repository.RedisRepository
-	logger    *slog.Logger
-	cacheTTL  time.Duration
+	repo     CartRepository
+	cache    CartCache
+	logger   *slog.Logger
+	cacheTTL time.Duration
 }
 
 func NewCartCacheAsideService(
-	pgRepo *repository.PostgresRepository,
-	redisRepo *repository.RedisRepository,
+	repo CartRepository,
+	cache CartCache,
 	logger *slog.Logger,
 	cacheTTL time.Duration,
 ) *CartCacheAsideService {
 	return &CartCacheAsideService{
-		pgRepo:    pgRepo,
-		redisRepo: redisRepo,
-		logger:    logger,
-		cacheTTL:  cacheTTL,
+		repo:     repo,
+		cache:    cache,
+		logger:   logger,
+		cacheTTL: cacheTTL,
 	}
 }
 
@@ -36,29 +36,20 @@ func (s *CartCacheAsideService) GetCart(ctx context.Context, userSSOID int) (*mo
 	const op = "service.GetCart"
 	log := s.logger.With(slog.String("op", op), slog.Int("user_id", userSSOID))
 
-	// 1. Пробуем получить из кэша
-	cart, err := s.redisRepo.GetCart(ctx, userSSOID)
+	cart, err := s.cache.GetCart(ctx, userSSOID)
 	if err == nil {
-		// Кэш-хит: возвращаем данные из кэша
-		if len(cart.Items) > 0 {
-			log.Info("cache hit")
-			return cart, nil
-		}
-		log.Info("cache hit but cart is empty, checking DB")
+		log.Debug("cache hit")
+		return cart, nil
 	}
 
-	// 2. Кэш-промах: загружаем из PostgreSQL
-	log.Info("cache miss, loading from db")
-	cart, err = s.pgRepo.GetCart(ctx, userSSOID)
+	log.Debug("cache miss, loading from db")
+	cart, err = s.repo.GetCart(ctx, userSSOID)
 	if err != nil {
-		log.Error("failed to get cart from postgres", slog.String("error", err.Error()))
 		return nil, fmt.Errorf("%s: %w", op, err)
 	}
 
-	// 3. Заполняем кэш новыми данными
-	if err = s.redisRepo.SetCart(ctx, userSSOID, cart, s.cacheTTL); err != nil {
+	if err := s.cache.SetCart(ctx, userSSOID, cart, s.cacheTTL); err != nil {
 		log.Warn("failed to cache cart", slog.String("error", err.Error()))
-		// Продолжаем работу даже при ошибке кэширования
 	}
 
 	return cart, nil
@@ -67,9 +58,8 @@ func (s *CartCacheAsideService) GetCart(ctx context.Context, userSSOID int) (*mo
 // AddItemToCart добавляет товар в корзину с обновлением БД и кэша
 func (s *CartCacheAsideService) AddItemToCart(ctx context.Context, userSSOID, sneakerID, quantity int) error {
 	const op = "service.AddToCart"
-	log := s.logger.With(slog.String("op", op), slog.Int("user_id", userSSOID), slog.Int("sneaker_id", sneakerID))
+	log := s.logger.With(slog.String("op", op), slog.Int("user_id", userSSOID))
 
-	// 1. Добавляем товар в основную БД
 	item := &models.CartItem{
 		UserSSOID: userSSOID,
 		SneakerID: sneakerID,
@@ -77,72 +67,58 @@ func (s *CartCacheAsideService) AddItemToCart(ctx context.Context, userSSOID, sn
 		AddedAt:   time.Now(),
 	}
 
-	err := s.pgRepo.AddCartItem(ctx, item)
-	if err != nil {
-		log.Error("failed to add item to postgres", slog.String("error", err.Error()))
+	if err := s.repo.AddCartItem(ctx, item); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// 2. Точечно обновляем кэш - добавляем элемент вместо инвалидации всей корзины
-	// Это оптимизация: добавляем товар напрямую в Redis вместо полной инвалидации
-	if err = s.redisRepo.AddToCartItem(ctx, *item); err != nil {
-		log.Warn("failed to invalidate cart cache", slog.String("error", err.Error()))
-		// При ошибке добавления в кэш - инвалидируем кэш для консистентности
-		if invalidateErr := s.redisRepo.InvalidateCart(ctx, userSSOID); invalidateErr != nil {
-			log.Warn("Also failed to invalidate cache for user", slog.String("error", err.Error()))
+	if err := s.cache.AddToCartItem(ctx, *item); err != nil {
+		log.Warn("failed to update cache, invalidating", slog.String("error", err.Error()))
+		if invErr := s.cache.InvalidateCart(ctx, userSSOID); invErr != nil {
+			log.Warn("failed to invalidate cache", slog.String("error", invErr.Error()))
 		}
 	}
 
-	log.Info("item successfully added to cart")
+	log.Info("item added to cart")
 	return nil
 }
 
 // UpdateCartItemQuantity обновляет количество товара в корзине
 func (s *CartCacheAsideService) UpdateCartItemQuantity(ctx context.Context, userSSOID int, itemID string, quantity int) error {
 	const op = "service.UpdateCartItemQuantity"
-	log := s.logger.With(slog.String("op", op), slog.Int("user_id", userSSOID), slog.String("item_id", itemID))
+	log := s.logger.With(slog.String("op", op), slog.Int("user_id", userSSOID))
 
-	// 1. Обновляем в PostgreSQL
-	err := s.pgRepo.UpdateCartItemQuantity(ctx, userSSOID, itemID, quantity)
-	if err != nil {
-		log.Error("failed to update item in postgres", slog.String("error", err.Error()))
+	if err := s.repo.UpdateCartItemQuantity(ctx, userSSOID, itemID, quantity); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// 2. Точечно обновляем кэш
-	if err = s.redisRepo.UpdateCartItemQuantity(ctx, userSSOID, itemID, quantity); err != nil {
-		log.Warn("failed to invalidate cart cache", slog.String("error", err.Error()))
-		// При ошибке обновления в кэше - инвалидируем кэш для консистентности
-		if invalidateErr := s.redisRepo.InvalidateCart(ctx, userSSOID); invalidateErr != nil {
-			log.Warn("Also failed to invalidate cache for user", slog.String("error", err.Error()))
+	if err := s.cache.UpdateCartItemQuantity(ctx, userSSOID, itemID, quantity); err != nil {
+		log.Warn("failed to update cache, invalidating", slog.String("error", err.Error()))
+		if invErr := s.cache.InvalidateCart(ctx, userSSOID); invErr != nil {
+			log.Warn("failed to invalidate cache", slog.String("error", invErr.Error()))
 		}
 	}
 
-	log.Info("item quantity successfully updated")
+	log.Info("item quantity updated")
 	return nil
 }
 
 // RemoveCartItem удаляет товар из корзины
 func (s *CartCacheAsideService) RemoveCartItem(ctx context.Context, userSSOID int, itemID string) error {
 	const op = "service.RemoveFromCart"
-	log := s.logger.With(slog.String("op", op), slog.Int("user_id", userSSOID), slog.String("item_id", itemID))
-	// 1. Удаляем из PostgreSQL
-	err := s.pgRepo.RemoveCartItem(ctx, userSSOID, itemID)
-	if err != nil {
-		log.Error("failed to remove item from postgres", slog.String("error", err.Error()))
+	log := s.logger.With(slog.String("op", op), slog.Int("user_id", userSSOID))
+
+	if err := s.repo.RemoveCartItem(ctx, userSSOID, itemID); err != nil {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// 2. Точечно удаляем из кэша (вместо полной инвалидации)
-	if err = s.redisRepo.RemoveFromCart(ctx, userSSOID, itemID); err != nil {
-		log.Warn("failed to invalidate cart cache", slog.String("error", err.Error()))
-		// При ошибке удаления из кэша - инвалидируем кэш для консистентности
-		if invalidateErr := s.redisRepo.InvalidateCart(ctx, userSSOID); invalidateErr != nil {
-			log.Warn("Also failed to invalidate cache for user", slog.String("error", err.Error()))
+	if err := s.cache.RemoveFromCart(ctx, userSSOID, itemID); err != nil {
+		log.Warn("failed to update cache, invalidating", slog.String("error", err.Error()))
+		if invErr := s.cache.InvalidateCart(ctx, userSSOID); invErr != nil {
+			log.Warn("failed to invalidate cache", slog.String("error", invErr.Error()))
 		}
 	}
 
-	log.Info("item successfully removed from cart")
+	log.Info("item removed from cart")
 	return nil
 }
 
@@ -150,28 +126,15 @@ func (s *CartCacheAsideService) RemoveCartItem(ctx context.Context, userSSOID in
 func (s *CartCacheAsideService) ClearCart(ctx context.Context, userSSOID int) error {
 	const op = "service.ClearCart"
 	log := s.logger.With(slog.String("op", op), slog.Int("user_id", userSSOID))
-	// 1. Очищаем в PostgreSQL
-	err := s.pgRepo.ClearCart(ctx, userSSOID)
-	if err != nil {
-		log.Error("failed to clear cart in postgres", slog.String("error", err.Error()))
-		return fmt.Errorf("failed to clear cart in PostgreSQL: %w", err)
+
+	if err := s.repo.ClearCart(ctx, userSSOID); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
 	}
 
-	// 2. Полностью инвалидируем кэш - здесь это логично, так как очищаем всю корзину
-	if err = s.redisRepo.InvalidateCart(ctx, userSSOID); err != nil {
-		log.Warn("failed to invalidate cart cache", slog.String("error", err.Error()))
+	if err := s.cache.InvalidateCart(ctx, userSSOID); err != nil {
+		log.Warn("failed to invalidate cache", slog.String("error", err.Error()))
 	}
 
-	log.Info("cart successfully cleared")
+	log.Info("cart cleared")
 	return nil
-}
-
-// AddToCart - метод для совместимости с интерфейсом CartService
-func (s *CartCacheAsideService) AddToCart(ctx context.Context, userSSOID, sneakerID, quantity int) error {
-	return s.AddItemToCart(ctx, userSSOID, sneakerID, quantity)
-}
-
-// RemoveFromCart - метод для совместимости с интерфейсом CartService
-func (s *CartCacheAsideService) RemoveFromCart(ctx context.Context, userSSOID int, itemID string) error {
-	return s.RemoveCartItem(ctx, userSSOID, itemID)
 }

@@ -1,50 +1,46 @@
 package main
 
 import (
-	"errors"
+	"database/sql"
 	"flag"
 	"fmt"
 	"os"
 
-	"github.com/golang-migrate/migrate/v4"
-	_ "github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
+	_ "github.com/lib/pq"
+	"github.com/pressly/goose/v3"
 )
 
 func main() {
-	var storagePath, migrationsPath, migrationsTable string
+	if err := run(); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
 
-	flag.StringVar(&storagePath, "storage-path", "", "path to storage")
-	flag.StringVar(&migrationsPath, "migrations-path", "", "path to migrations")
-	flag.StringVar(&migrationsTable, "migrations-table", "migrations", "name of migrations table")
+func run() error {
+	dsn := os.Getenv("POSTGRES_DSN")
+	dir := flag.String("dir", "/app/migrations", "migrations directory")
+	command := flag.String("command", "up", "goose command (up, down, status, reset, version)")
 	flag.Parse()
 
-	if storagePath == "" {
-		storagePath = os.Getenv("POSTGRES_DSN")
-		if storagePath == "" {
-			panic("storage-path or POSTGRES_DSN environment variable is required")
-		}
+	if dsn == "" {
+		return fmt.Errorf("POSTGRES_DSN environment variable is required")
 	}
 
-	if migrationsPath == "" {
-		panic("migrations-path is required")
-	}
-
-	m, err := migrate.New(
-		"file://"+migrationsPath,
-		storagePath,
-	)
+	db, err := sql.Open("postgres", dsn)
 	if err != nil {
-		panic(err)
+		return fmt.Errorf("open db: %w", err)
+	}
+	defer db.Close()
+
+	if err := db.Ping(); err != nil {
+		return fmt.Errorf("ping db: %w", err)
 	}
 
-	if err := m.Up(); err != nil {
-		if errors.Is(err, migrate.ErrNoChange) {
-			fmt.Println("no migrations to apply")
-			return
-		}
-		panic(err)
+	if err := goose.Run(*command, db, *dir); err != nil {
+		return fmt.Errorf("goose %s: %w", *command, err)
 	}
 
 	fmt.Println("migrations applied successfully")
+	return nil
 }

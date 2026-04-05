@@ -95,8 +95,11 @@ func loggingInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (interface{}, error) {
+		rid := requestIDFromMD(ctx)
+
 		log.Info("gRPC request",
 			slog.String("method", info.FullMethod),
+			slog.String("request_id", rid),
 		)
 
 		resp, err := handler(ctx, req)
@@ -104,6 +107,7 @@ func loggingInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 		if err != nil {
 			log.Error("gRPC request failed",
 				slog.String("method", info.FullMethod),
+				slog.String("request_id", rid),
 				slog.String("error", err.Error()),
 			)
 		}
@@ -112,7 +116,20 @@ func loggingInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 	}
 }
 
-// userContextInterceptor extracts user_id from metadata and adds to context
+// requestIDFromMD извлекает request_id из gRPC-метаданных.
+func requestIDFromMD(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	vals := md.Get("request_id")
+	if len(vals) == 0 {
+		return ""
+	}
+	return vals[0]
+}
+
+// userContextInterceptor извлекает user_id из метаданных и добавляет в контекст
 func userContextInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
@@ -130,8 +147,8 @@ func userContextInterceptor(log *slog.Logger) grpc.UnaryServerInterceptor {
 			return nil, status.Error(codes.Unauthenticated, "user_id not found in metadata")
 		}
 
-		// Add user_id to context for use in handlers
-		ctx = context.WithValue(ctx, "user_id", userIDs[0])
+		// Добавляем user_id в контекст для использования в хендлерах
+		ctx = context.WithValue(ctx, cart.UserIDKey, userIDs[0])
 
 		return handler(ctx, req)
 	}

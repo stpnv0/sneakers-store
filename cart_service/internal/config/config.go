@@ -8,6 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Config содержит всю конфигурацию сервиса корзины.
 type Config struct {
 	Env      string         `yaml:"env"`
 	GRPC     GRPCConfig     `yaml:"grpc"`
@@ -15,17 +16,12 @@ type Config struct {
 	Postgres PostgresConfig `yaml:"postgres"`
 }
 
+// GRPCConfig содержит настройки gRPC-сервера.
 type GRPCConfig struct {
 	Port int `yaml:"port"`
 }
 
-type HTTPServer struct {
-	Address     string   `yaml:"address"`
-	Timeout     string   `yaml:"timeout"`
-	IdleTimeout string   `yaml:"idle_timeout"`
-	CorsAllowed []string `yaml:"cors_allowed"`
-}
-
+// RedisConfig содержит параметры подключения к Redis.
 type RedisConfig struct {
 	Host       string `yaml:"host"`
 	Port       int    `yaml:"port"`
@@ -34,6 +30,7 @@ type RedisConfig struct {
 	Expiration string `yaml:"expiration"`
 }
 
+// PostgresConfig содержит параметры подключения к PostgreSQL.
 type PostgresConfig struct {
 	Host               string `yaml:"host"`
 	Port               int    `yaml:"port"`
@@ -45,6 +42,7 @@ type PostgresConfig struct {
 	ConnectionTimeoutS int    `yaml:"connection_timeout"`
 }
 
+// DSN возвращает строку подключения к PostgreSQL.
 func (p PostgresConfig) DSN() string {
 	host := p.Host
 	if host == "" {
@@ -66,26 +64,17 @@ func (p PostgresConfig) DSN() string {
 	)
 }
 
-// Load загружает конфигурацию из файла
+// Load читает конфигурацию из указанного файла.
 func Load(configPath string) (*Config, error) {
-	configFile, err := os.ReadFile(configPath)
+	data, err := os.ReadFile(configPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read config file: %w", err)
+		return nil, fmt.Errorf("config: read file %s: %w", configPath, err)
 	}
 
 	var cfg Config
-	if err = yaml.Unmarshal(configFile, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config file: %w", err)
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("config: parse yaml: %w", err)
 	}
 
 	return &cfg, nil
-}
-
-// MustLoad загружает конфигурацию из файла или паникует при ошибке
-func MustLoad() *Config {
-	cfg, err := Load("config/config.yaml")
-	if err != nil {
-		panic(fmt.Sprintf("failed to load config: %v", err))
-	}
-	return cfg
 }

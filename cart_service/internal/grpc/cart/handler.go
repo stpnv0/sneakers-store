@@ -91,7 +91,7 @@ func (s *serverAPI) GetCart(
 		return nil, status.Error(codes.Internal, "failed to get cart")
 	}
 
-	// Convert to proto Cart
+	// Конвертируем в proto Cart
 	protoCart := convertToProtoCart(cart)
 
 	return &cartv1.GetCartResponse{
@@ -190,17 +190,23 @@ func (s *serverAPI) ClearCart(
 	}, nil
 }
 
-// Helper functions
+// ContextKey — типизированный ключ для значений контекста, избегающий коллизий.
+type ContextKey string
+
+// UserIDKey — ключ для хранения user_id в контексте.
+const UserIDKey ContextKey = "user_id"
+
+// Вспомогательные функции
 
 func getUserIDFromContext(ctx context.Context) (int, error) {
-	userIDStr, ok := ctx.Value("user_id").(string)
+	userIDStr, ok := ctx.Value(UserIDKey).(string)
 	if !ok {
-		return 0, fmt.Errorf("user_id not found in context")
+		return 0, fmt.Errorf("user_id не найден в контексте")
 	}
 
 	userID, err := strconv.Atoi(userIDStr)
 	if err != nil {
-		return 0, fmt.Errorf("invalid user_id format: %w", err)
+		return 0, fmt.Errorf("невалидный формат user_id: %w", err)
 	}
 
 	return userID, nil
@@ -219,14 +225,14 @@ func convertToProtoCart(cart *models.Cart) *cartv1.Cart {
 	for _, item := range cart.Items {
 		protoItems = append(protoItems, &cartv1.CartItem{
 			Id:        item.ID,
-			SneakerId: int32(item.SneakerID),
+			SneakerId: int64(item.SneakerID),
 			Quantity:  int32(item.Quantity),
 			AddedAt:   item.AddedAt.Unix(),
 		})
 	}
 
 	return &cartv1.Cart{
-		UserId:    int32(cart.UserSSOID),
+		UserId:    int64(cart.UserSSOID),
 		Items:     protoItems,
 		UpdatedAt: cart.UpdatedAt.Unix(),
 	}

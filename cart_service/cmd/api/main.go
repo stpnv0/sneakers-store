@@ -1,10 +1,6 @@
 package main
 
 import (
-	"cart_service/internal/config"
-	grpcapp "cart_service/internal/grpc"
-	"cart_service/internal/repository"
-	"cart_service/internal/services"
 	"context"
 	"log/slog"
 	"os"
@@ -14,58 +10,99 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+
+	"cart_service/internal/config"
+	grpcapp "cart_service/internal/grpc"
+	"cart_service/internal/repository"
+	"cart_service/internal/services"
 )
 
 func main() {
-	cfg := config.MustLoad()
-
-	log := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug})).With(slog.String("service", "cart"))
-
-	redisClient := mustInitRedis(cfg, log)
-
-	db, err := repository.NewPostgresDB(cfg.Postgres.DSN())
-	if err != nil {
-		log.Error("failed to connect to PostgreSQL", slog.String("error", err.Error()))
+	if err := run(); err != nil {
+		slog.Error("fatal error", slog.String("error", err.Error()))
 		os.Exit(1)
 	}
-	defer db.Close()
-
-	redisRepo := repository.NewRedisRepository(redisClient)
-	pgRepo := repository.NewPostgresRepository(db)
-
-	cartService := services.NewCartCacheAsideService(
-		pgRepo,
-		redisRepo,
-		log,
-		24*time.Hour,
-	)
-
-	// Initialize gRPC server
-	grpcApp := grpcapp.New(log, cartService, cfg.GRPC.Port)
-
-	go grpcApp.MustRun()
-
-	// Graceful shutdown
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
-	log.Info("shutting down cart service...")
-	grpcApp.Stop()
-	log.Info("cart service stopped")
 }
 
-func mustInitRedis(cfg *config.Config, log *slog.Logger) *redis.Client {
+func run() error {
+	log := setupLogger("cart_service")
+
+	configPath := os.Getenv("CONFIG_PATH")
+	if configPath == "" {
+		configPath = "config/config.yaml"
+	}
+
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return err
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
+
+	// Redis
 	addr := cfg.Redis.Host + ":" + strconv.Itoa(cfg.Redis.Port)
-	client := redis.NewClient(&redis.Options{
+	redisClient := redis.NewClient(&redis.Options{
 		Addr:     addr,
 		Password: cfg.Redis.Password,
 		DB:       cfg.Redis.DB,
 	})
-	if err := client.Ping(context.Background()).Err(); err != nil {
-		log.Error("failed to connect to Redis", slog.String("error", err.Error()))
-		os.Exit(1)
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		return err
 	}
-	log.Info("successfully connected to Redis", slog.String("addr", addr))
-	return client
+	defer redisClient.Close()
+	log.Info("connected to redis", slog.String("addr", addr))
+
+	// PostgreSQL
+	db, err := repository.NewPostgresDB(cfg.Postgres.DSN())
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	log.Info("connected to postgres")
+
+	redisRepo := repository.NewRedisRepository(redisClient)
+	pgRepo := repository.NewPostgresRepository(db)
+
+	expiration, err := time.ParseDuration(cfg.Redis.Expiration)
+	if err != nil {
+		expiration = 24 * time.Hour
+	}
+	cartService := services.NewCartCacheAsideService(pgRepo, redisRepo, log, expiration)
+
+	grpcApp := grpcapp.New(log, cartService, cfg.GRPC.Port)
+
+	errCh := make(chan error, 1)
+	go func() {
+		if err := grpcApp.Run(); err != nil {
+			errCh <- err
+		}
+	}()
+
+	select {
+	case <-ctx.Done():
+		log.Info("shutdown signal received")
+	case err := <-errCh:
+		log.Error("grpc server failed", slog.String("error", err.Error()))
+		stop()
+	}
+
+	grpcApp.Stop()
+	log.Info("cart service stopped")
+	return nil
+}
+
+func setupLogger(serviceName string) *slog.Logger {
+	env := os.Getenv("ENV")
+
+	var level slog.Level
+	switch env {
+	case "prod":
+		level = slog.LevelInfo
+	default:
+		level = slog.LevelDebug
+	}
+
+	return slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level})).
+		With(slog.String("service", serviceName))
 }

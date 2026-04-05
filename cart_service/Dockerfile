@@ -2,37 +2,37 @@ FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
-# Copy protos first
+RUN apk add --no-cache git
+
 COPY protos ./protos
+COPY cart_service/go.mod cart_service/go.sum ./cart_service/
+WORKDIR /app/cart_service
+RUN go mod download
 
-# Copy cart_service code
-COPY cart_service .
+COPY cart_service ./
+RUN CGO_ENABLED=0 GOOS=linux go build -o /app/bin/cart_service  ./cmd/api && \
+    CGO_ENABLED=0 GOOS=linux go build -o /app/bin/cart_migrator ./cmd/migrator
 
-# Update replace directive to match Docker structure
-RUN sed -i 's|replace github.com/stpnv0/protos => ../protos|replace github.com/stpnv0/protos => ./protos|g' go.mod
+# ---
 
-# Install git and build-base for dependencies
-RUN apk add --no-cache git build-base
+FROM alpine:3.20
 
-# Build the service
-RUN go mod download && \
-    go mod tidy && \
-    CGO_ENABLED=0 GOOS=linux go build -o cart_service ./cmd/api && \
-    CGO_ENABLED=0 GOOS=linux go build -o cart_migrator ./cmd/migrator
-
-FROM alpine:latest
-
-RUN apk --no-cache add ca-certificates tzdata
+RUN apk --no-cache add ca-certificates tzdata && \
+    addgroup -g 1000 appuser && \
+    adduser -D -u 1000 -G appuser appuser
 
 WORKDIR /app
 
-COPY --from=builder --chmod=755 /app/cart_service /app/cart_service
-COPY --from=builder --chmod=755 /app/cart_migrator /app/cart_migrator
-COPY --from=builder /app/config /app/config
-COPY --from=builder /app/migrations /app/migrations
+COPY --from=builder --chmod=755 /app/bin/cart_service  ./cart_service
+COPY --from=builder --chmod=755 /app/bin/cart_migrator ./cart_migrator
+COPY --from=builder /app/cart_service/config     ./config
+COPY --from=builder /app/cart_service/migrations ./migrations
 
-ENV GIN_MODE=release
+USER appuser
 
 EXPOSE 44046
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["true"]
 
 CMD ["/app/cart_service"]

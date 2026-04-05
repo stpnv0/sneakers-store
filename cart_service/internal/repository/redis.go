@@ -4,11 +4,14 @@ import (
 	"cart_service/internal/models"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 )
+
+var ErrCacheMiss = errors.New("cache miss")
 
 type RedisRepository struct {
 	client *redis.Client
@@ -51,16 +54,17 @@ func (r *RedisRepository) AddToCartItem(ctx context.Context, item models.CartIte
 
 	itemJSON, err := json.Marshal(item)
 	if err != nil {
-		return fmt.Errorf("ERROR: cant marshal cart item: %w", err)
+		return fmt.Errorf("marshal cart item: %w", err)
 	}
 
 	err = r.client.HSet(ctx, key, item.ID, itemJSON).Err()
 	if err != nil {
-		return fmt.Errorf("ERROR: cant set cart item to redis: %w", err)
+		return fmt.Errorf("set cart item in redis: %w", err)
 	}
 
-	//TTL для корзины
-	r.client.Expire(ctx, key, 1*24*time.Hour)
+	if err := r.client.Expire(ctx, key, 24*time.Hour).Err(); err != nil {
+		return fmt.Errorf("set cart ttl: %w", err)
+	}
 
 	return nil
 }
@@ -68,9 +72,17 @@ func (r *RedisRepository) AddToCartItem(ctx context.Context, item models.CartIte
 func (r *RedisRepository) GetCart(ctx context.Context, userSSOID int) (*models.Cart, error) {
 	key := getCartKey(userSSOID)
 
+	exists, err := r.client.Exists(ctx, key).Result()
+	if err != nil {
+		return nil, fmt.Errorf("check cart key existence: %w", err)
+	}
+	if exists == 0 {
+		return nil, ErrCacheMiss
+	}
+
 	values, err := r.client.HGetAll(ctx, key).Result()
 	if err != nil {
-		return nil, fmt.Errorf("ERROR: can't get values from redis: %w", err)
+		return nil, fmt.Errorf("get cart from redis: %w", err)
 	}
 
 	cart := models.Cart{
@@ -82,7 +94,7 @@ func (r *RedisRepository) GetCart(ctx context.Context, userSSOID int) (*models.C
 	for _, val := range values {
 		var item models.CartItem
 		if err := json.Unmarshal([]byte(val), &item); err != nil {
-			return nil, fmt.Errorf("ERROR: can't unmarshal values from redis: %w", err)
+			return nil, fmt.Errorf("unmarshal cart item from redis: %w", err)
 		}
 
 		cart.Items = append(cart.Items, item)
@@ -95,27 +107,30 @@ func (r *RedisRepository) GetCart(ctx context.Context, userSSOID int) (*models.C
 func (r *RedisRepository) SetCart(ctx context.Context, userSSOID int, cart *models.Cart, ttl time.Duration) error {
 	key := getCartKey(userSSOID)
 
-	// Удаляем старую корзину, если она есть
-	r.client.Del(ctx, key)
+	if err := r.client.Del(ctx, key).Err(); err != nil {
+		return fmt.Errorf("delete old cart from redis: %w", err)
+	}
 
 	// Проходим по всем элементам и добавляем их в корзину
 	for _, item := range cart.Items {
 		itemJSON, err := json.Marshal(item)
 		if err != nil {
-			return fmt.Errorf("ERROR: can't marshal cart item: %w", err)
+			return fmt.Errorf("marshal cart item: %w", err)
 		}
 
 		err = r.client.HSet(ctx, key, item.ID, itemJSON).Err()
 		if err != nil {
-			return fmt.Errorf("ERROR: can't set cart item to Redis: %w", err)
+			return fmt.Errorf("set cart item in redis: %w", err)
 		}
 	}
 
 	// Устанавливаем TTL для корзины
-	if ttl > 0 {
-		r.client.Expire(ctx, key, ttl)
-	} else {
-		r.client.Expire(ctx, key, 24*time.Hour) // дефолтное значение, если не указано
+	expiry := ttl
+	if expiry <= 0 {
+		expiry = 24 * time.Hour
+	}
+	if err := r.client.Expire(ctx, key, expiry).Err(); err != nil {
+		return fmt.Errorf("set cart ttl: %w", err)
 	}
 
 	return nil
@@ -132,12 +147,12 @@ func (r *RedisRepository) GetItemFromCart(ctx context.Context, userSSOID int, it
 
 	itemJSON, err := r.client.HGet(ctx, key, itemID).Result()
 	if err != nil {
-		return nil, fmt.Errorf("ERROR: can't get item JSON from redis")
+		return nil, fmt.Errorf("get item from redis: %w", err)
 	}
 
 	var item models.CartItem
 	if err := json.Unmarshal([]byte(itemJSON), &item); err != nil {
-		return nil, fmt.Errorf("ERROR: can't unmarshal item JSON from redis")
+		return nil, fmt.Errorf("unmarshal item from redis: %w", err)
 	}
 
 	return &item, nil
@@ -148,12 +163,12 @@ func (r *RedisRepository) UpdateCartItemQuantity(ctx context.Context, userSSOID 
 
 	itemJSON, err := r.client.HGet(ctx, key, itemID).Result()
 	if err != nil {
-		return fmt.Errorf("ERROR: can't get cart item JSON from redis")
+		return fmt.Errorf("get cart item from redis: %w", err)
 	}
 
 	var item models.CartItem
 	if err := json.Unmarshal([]byte(itemJSON), &item); err != nil {
-		return fmt.Errorf("ERROR: can't unmarshal cart item JSON from redis")
+		return fmt.Errorf("unmarshal cart item from redis: %w", err)
 	}
 
 	item.Quantity = newQuantity
@@ -161,7 +176,7 @@ func (r *RedisRepository) UpdateCartItemQuantity(ctx context.Context, userSSOID 
 
 	updatedJSON, err := json.Marshal(item)
 	if err != nil {
-		return fmt.Errorf("ERROR: can't marshal updated item from redis")
+		return fmt.Errorf("marshal updated item: %w", err)
 	}
 
 	return r.client.HSet(ctx, key, itemID, updatedJSON).Err()
